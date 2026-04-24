@@ -17,50 +17,6 @@ import mcp.types as types
 from mcp.server import NotificationOptions, Server
 from mcp.server.models import InitializationOptions
 
-USAGE_GUIDE = """
-# Super Productivity MCP — Usage Guide
-
-## Tool Hierarchy
-
-### Primary (use these most)
-- **get_tasks** — filtered task lookup with inline tag labels. Start here.
-- **update_task** — modify any task property (title, notes, tags, done, estimates)
-- **create_task** — add a new task or subtask
-
-### Discovery (use once to get IDs)
-- **get_projects** — get project IDs and titles; use project_id to scope get_tasks
-- **get_tags** — rarely needed; tag labels are resolved inline in get_tasks results
-
-### Actions
-- **complete_and_archive_task** — mark a task done (true deletion not supported)
-- **show_notification** — push a notification into Super Productivity
-
-### Setup / Maintenance
-- **create_project**, **create_tag** — one-time setup
-- **debug_directories** — troubleshoot IPC if commands aren't responding
-
-## get_tasks Filter Guide
-
-Default behaviour: returns open, top-level tasks only (no subtasks, no done tasks).
-Scope with filters before committing to a large fetch.
-
-| Param            | Type    | Default | Description                              |
-|------------------|---------|---------|------------------------------------------|
-| project_id       | string  | —       | Scope to one project                     |
-| task_id          | string  | —       | Single task lookup by ID                 |
-| search           | string  | —       | Case-insensitive title substring match   |
-| include_done     | boolean | false   | Include completed tasks                  |
-| include_subtasks | boolean | false   | Include subtasks (top-level only default)|
-
-Tag IDs are automatically resolved to labels in every response — no separate get_tags call needed.
-
-## Recommended Discovery Pattern
-1. `get_projects` → find the right project_id
-2. `get_tasks(project_id=...)` → list open top-level tasks, note IDs and tags
-3. `get_tasks(task_id=...)` → drill into a specific task with full detail
-4. `update_task` / `create_task` → act on what you found
-""".strip()
-
 
 EXPLAIN_TOPICS = {
     "tools": """
@@ -528,9 +484,15 @@ class SuperProductivityMCPServer:
         ) -> List[types.TextContent]:
             try:
                 if name == "explain":
-                    result = await self.explain(arguments)
-                elif name == "get_usage":
-                    result = {"success": True, "result": USAGE_GUIDE}
+                    topic = arguments.get("topic", "")
+                    content = EXPLAIN_TOPICS.get(topic)
+                    if content:
+                        result = {"success": True, "result": content}
+                    else:
+                        result = {
+                            "success": False,
+                            "error": f"Unknown topic '{topic}'. Valid: {list(EXPLAIN_TOPICS.keys())}"
+                        }
                 elif name == "get_tasks":
                     result = await self.get_tasks(arguments)
                 elif name == "get_completed_tasks":
