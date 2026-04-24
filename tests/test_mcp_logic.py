@@ -73,3 +73,48 @@ def test_merge_remove_nonexistent():
 
 def test_merge_empty():
     assert merge_tag_ids([], add=[], remove=[]) == []
+
+
+from mcp_server import apply_task_filters, today_str
+
+
+def _task(id="t1", title="Test", is_done=False, parent_id=None,
+          project_id=None, tag_ids=None, due_day=None):
+    return {"id": id, "title": title, "isDone": is_done,
+            "parentId": parent_id, "projectId": project_id,
+            "tagIds": tag_ids or [], "dueDay": due_day}
+
+
+def test_filter_excludes_done_by_default():
+    tasks = [_task(id="a"), _task(id="b", is_done=True)]
+    assert [t["id"] for t in apply_task_filters(tasks, {})] == ["a"]
+
+def test_filter_include_done():
+    tasks = [_task(id="a"), _task(id="b", is_done=True)]
+    assert len(apply_task_filters(tasks, {"include_done": True})) == 2
+
+def test_filter_excludes_subtasks_by_default():
+    tasks = [_task(id="a"), _task(id="b", parent_id="a")]
+    assert [t["id"] for t in apply_task_filters(tasks, {})] == ["a"]
+
+def test_filter_due_before():
+    tasks = [_task(id="a", due_day="2026-04-20"), _task(id="b", due_day="2026-04-25")]
+    assert [t["id"] for t in apply_task_filters(tasks, {"due_before": "2026-04-22"})] == ["a"]
+
+def test_filter_due_after():
+    tasks = [_task(id="a", due_day="2026-04-20"), _task(id="b", due_day="2026-04-25")]
+    assert [t["id"] for t in apply_task_filters(tasks, {"due_after": "2026-04-22"})] == ["b"]
+
+def test_filter_is_today_by_due_day():
+    tasks = [_task(id="a", due_day=today_str()), _task(id="b", due_day="2020-01-01")]
+    result_ids = [t["id"] for t in apply_task_filters(tasks, {"is_today": True})]
+    assert "a" in result_ids and "b" not in result_ids
+
+def test_filter_is_today_by_tag():
+    tasks = [_task(id="a", tag_ids=["TODAY"]), _task(id="b", tag_ids=["other"])]
+    result_ids = [t["id"] for t in apply_task_filters(tasks, {"is_today": True})]
+    assert "a" in result_ids and "b" not in result_ids
+
+def test_filter_search():
+    tasks = [_task(id="a", title="Buy milk"), _task(id="b", title="Do taxes")]
+    assert [t["id"] for t in apply_task_filters(tasks, {"search": "milk"})] == ["a"]

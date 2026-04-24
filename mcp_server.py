@@ -131,6 +131,41 @@ def merge_tag_ids(current: list, add: list, remove: list) -> list:
     return result
 
 
+def apply_task_filters(tasks: list, args: dict) -> list:
+    """Apply get_tasks filter args to a list. Pure — no I/O."""
+    task_id = args.get("task_id")
+    if task_id:
+        return [t for t in tasks if t.get("id") == task_id]
+
+    if args.get("project_id"):
+        tasks = [t for t in tasks if t.get("projectId") == args["project_id"]]
+
+    if not args.get("include_done", False):
+        tasks = [t for t in tasks if not t.get("isDone")]
+
+    if not args.get("include_subtasks", False):
+        tasks = [t for t in tasks if not t.get("parentId")]
+
+    if args.get("search"):
+        needle = args["search"].lower()
+        tasks = [t for t in tasks if needle in t.get("title", "").lower()]
+
+    if args.get("is_today"):
+        today = today_str()
+        tasks = [
+            t for t in tasks
+            if t.get("dueDay") == today or "TODAY" in t.get("tagIds", [])
+        ]
+
+    if args.get("due_before"):
+        tasks = [t for t in tasks if t.get("dueDay") and t["dueDay"] <= args["due_before"]]
+
+    if args.get("due_after"):
+        tasks = [t for t in tasks if t.get("dueDay") and t["dueDay"] >= args["due_after"]]
+
+    return tasks
+
+
 class SuperProductivityMCPServer:
     def __init__(self):
         self.server = Server("super-productivity")
