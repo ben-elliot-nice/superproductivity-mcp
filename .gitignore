@@ -31,3 +31,9 @@ plugin_responses/
 
 # Backups created by setup scripts
 *.backup
+
+# Plugin build artefacts
+plugin/*.zip
+
+# Git worktrees
+.worktrees/
