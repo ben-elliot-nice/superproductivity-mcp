@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+*.egg-info/
+dist/
+build/
+
+# uv
+.python-version
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE
+.vscode/
+.idea/
+
+# Local MCP config (contains machine-specific absolute paths)
+.mcp.json
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Runtime directories created by the MCP server
+plugin_commands/
+plugin_responses/
+
+# Backups created by setup scripts
+*.backup

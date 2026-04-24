@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "super-productivity": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "--project",
+        "/path/to/superproductivity-mcp",
+        "/path/to/superproductivity-mcp/mcp_server.py"
+      ]
+    }
+  }
+}
