@@ -133,6 +133,17 @@
             color: #e0e0e0;
         }
 
+        .form-group select {
+            padding: 0.5rem;
+            border: 1px solid #555;
+            border-radius: 4px;
+            font-size: 0.875rem;
+            width: 120px;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            cursor: pointer;
+        }
+
         .btn {
             padding: 0.5rem 1rem;
             border: none;
@@ -294,6 +305,15 @@
                         <label for="pollingFrequency">Polling Frequency (seconds):</label>
                         <input type="number" id="pollingFrequency" min="1" max="60" value="2" />
                     </div>
+                    <div class="form-group">
+                        <label for="logLevelSelect">Log Level:</label>
+                        <select id="logLevelSelect" onchange="updateLogLevel()">
+                            <option value="debug">DEBUG</option>
+                            <option value="info" selected>INFO</option>
+                            <option value="warn">WARN</option>
+                            <option value="error">ERROR</option>
+                        </select>
+                    </div>
                     <button class="btn btn-primary" onclick="updatePollingFrequency()">Update</button>
                     <button class="btn btn-secondary" onclick="clearLogs()">Clear Logs</button>
                 </div>
@@ -335,6 +355,10 @@
         function loadSettings() {
             bridgeStatus.pollingFrequency = 2;
             document.getElementById('pollingFrequency').value = bridgeStatus.pollingFrequency;
+
+            const savedLevel = localStorage.getItem('mcpBridgeLogLevel') || 'info';
+            document.getElementById('logLevelSelect').value = savedLevel;
+            applyLogLevelFilter(savedLevel);
         }
 
 
@@ -346,6 +370,9 @@
             for (const entry of newEntries) {
                 addLogEntry(entry.message, entry.level, entry.timestamp);
             }
+            // Re-apply filter so new entries respect the current level
+            const currentLevel = document.getElementById('logLevelSelect').value;
+            applyLogLevelFilter(currentLevel);
         }
 
         function updateBridgeStatus(data) {
@@ -470,8 +497,36 @@
         }
 
         function clearLogs() {
-            document.getElementById('logsContainer').innerHTML = '';
+            const container = document.getElementById('logsContainer');
+            container.innerHTML = '';
+            lastSyncedLogId = 0;
+            // Re-sync from the beginning of the current buffer
+            if (window.parent && window.parent.mcpBridge) {
+                const status = window.parent.mcpBridge.getStatus();
+                if (status && status.logBuffer) {
+                    syncLogBuffer(status.logBuffer);
+                }
+            }
             addLogEntry('Logs cleared', 'info');
+        }
+
+        function updateLogLevel() {
+            const level = document.getElementById('logLevelSelect').value;
+            localStorage.setItem('mcpBridgeLogLevel', level);
+            applyLogLevelFilter(level);
+            sendMessageToPlugin({ type: 'updateLogLevel', level });
+            addLogEntry(`Log level set to ${level.toUpperCase()}`, 'info');
+        }
+
+        function applyLogLevelFilter(level) {
+            const levels = { debug: 0, info: 1, warn: 2, error: 3 };
+            const threshold = levels[level] ?? 1;
+            const container = document.getElementById('logsContainer');
+            for (const entry of container.children) {
+                const entryLevel = entry.dataset.level || 'info';
+                const entryThreshold = levels[entryLevel] ?? 1;
+                entry.style.display = entryThreshold >= threshold ? '' : 'none';
+            }
         }
 
 
@@ -481,9 +536,11 @@
                     window.parent.mcpBridge.updatePollingFrequency(message.frequency);
                 } else if (message.type === 'forceCheck') {
                     window.parent.mcpBridge.forceCommandCheck();
+                } else if (message.type === 'updateLogLevel') {
+                    window.parent.mcpBridge.updateLogLevel(message.level);
                 }
             } else {
-                addLogEntry('Could not communicate with plugin', 'warning');
+                addLogEntry('Could not communicate with plugin', 'warn');
             }
         }
 
