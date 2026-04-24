@@ -51,3 +51,25 @@ def test_parse_due_datetime_iso():
 
 def test_parse_due_datetime_none():
     assert parse_due_datetime(None) is None
+
+
+from mcp_server import merge_tag_ids
+
+
+def test_merge_add():
+    assert merge_tag_ids(["a", "b"], add=["c"], remove=[]) == ["a", "b", "c"]
+
+def test_merge_remove():
+    assert merge_tag_ids(["a", "b", "c"], add=[], remove=["b"]) == ["a", "c"]
+
+def test_merge_deduplicates():
+    assert merge_tag_ids(["a", "b"], add=["b"], remove=[]) == ["a", "b"]
+
+def test_merge_add_and_remove():
+    assert merge_tag_ids(["a", "b"], add=["c"], remove=["a"]) == ["b", "c"]
+
+def test_merge_remove_nonexistent():
+    assert merge_tag_ids(["a"], add=[], remove=["z"]) == ["a"]
+
+def test_merge_empty():
+    assert merge_tag_ids([], add=[], remove=[]) == []

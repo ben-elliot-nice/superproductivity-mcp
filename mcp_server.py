@@ -122,6 +122,15 @@ def parse_due_datetime(value) -> Optional[int]:
         return None
 
 
+def merge_tag_ids(current: list, add: list, remove: list) -> list:
+    """Additive tag merge. Order: existing (minus removed) + new."""
+    result = [t for t in current if t not in remove]
+    for t in add:
+        if t not in result:
+            result.append(t)
+    return result
+
+
 class SuperProductivityMCPServer:
     def __init__(self):
         self.server = Server("super-productivity")
