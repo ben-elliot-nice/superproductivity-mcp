@@ -931,6 +931,64 @@ class SuperProductivityMCPServer:
             return {"success": False, "error": "task_id is required"}
         return await self.send_command("setTaskDone", taskId=task_id)
 
+    async def convert_to_subtask(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Copy a top-level task as a subtask of parent_task_id, then archive the original.
+
+        SP has no native reparent: we copy fields → create subtask → archive original.
+        Subtasks do not carry projectId (SP derives it from the parent).
+        """
+        task_id = args.get("task_id")
+        parent_task_id = args.get("parent_task_id")
+        if not task_id or not parent_task_id:
+            return {"success": False, "error": "task_id and parent_task_id are required"}
+
+        # Fetch all tasks to find both source and parent
+        tasks_resp, _ = await asyncio.gather(
+            self.send_command("getTasks"),
+            self._ensure_tag_cache()
+        )
+        if not tasks_resp.get("success"):
+            return tasks_resp
+
+        all_tasks = tasks_resp.get("result", [])
+        source = next((t for t in all_tasks if t["id"] == task_id), None)
+        parent = next((t for t in all_tasks if t["id"] == parent_task_id), None)
+
+        if not source:
+            return {"success": False, "error": f"Source task {task_id} not found"}
+        if not parent:
+            return {"success": False, "error": f"Parent task {parent_task_id} not found"}
+        if source.get("parentId"):
+            return {"success": False, "error": "Source task is already a subtask."}
+
+        # Build subtask data — copy relevant fields, drop projectId (parent owns it)
+        subtask_data: Dict[str, Any] = {
+            "title": source.get("title", ""),
+            "notes": source.get("notes", ""),
+            "timeEstimate": source.get("timeEstimate", 0),
+            "tagIds": source.get("tagIds", []),
+            "parentId": parent_task_id,
+        }
+        if source.get("dueDay"):
+            subtask_data["dueDay"] = source["dueDay"]
+        if source.get("dueWithTime"):
+            subtask_data["dueWithTime"] = source["dueWithTime"]
+
+        # Create the subtask
+        create_resp = await self.send_command("addTask", data=subtask_data)
+        if not create_resp.get("success"):
+            return {"success": False, "error": f"Failed to create subtask: {create_resp.get('error')}"}
+
+        # Archive the original (SP doesn't support deletion)
+        archive_resp = await self.send_command("setTaskDone", taskId=task_id)
+
+        return {
+            "success": True,
+            "new_subtask_id": create_resp.get("result"),
+            "original_archived": archive_resp.get("success", False),
+            "note": "Original task archived (not deleted — SP limitation)."
+        }
+
     async def get_projects(self, args: Dict[str, Any]) -> Dict[str, Any]:
         return await self.send_command("getAllProjects")
 
