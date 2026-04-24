@@ -166,6 +166,14 @@ def apply_task_filters(tasks: list, args: dict) -> list:
     return tasks
 
 
+def filter_completed_since(tasks: list, since_days: int, now_ms: int = None) -> list:
+    """Filter to tasks completed within the last since_days days."""
+    if now_ms is None:
+        now_ms = int(_time.time() * 1000)
+    cutoff = now_ms - (since_days * 86400 * 1000)
+    return [t for t in tasks if t.get("doneOn") and t["doneOn"] >= cutoff]
+
+
 class SuperProductivityMCPServer:
     def __init__(self):
         self.server = Server("super-productivity")

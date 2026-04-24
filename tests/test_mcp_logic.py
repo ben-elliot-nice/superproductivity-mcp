@@ -118,3 +118,18 @@ def test_filter_is_today_by_tag():
 def test_filter_search():
     tasks = [_task(id="a", title="Buy milk"), _task(id="b", title="Do taxes")]
     assert [t["id"] for t in apply_task_filters(tasks, {"search": "milk"})] == ["a"]
+
+
+from mcp_server import filter_completed_since
+
+_NOW = 1714003200000  # fixed ms reference point
+
+def test_completed_includes_recent():
+    recent = {"id": "a", "isDone": True, "doneOn": _NOW - (3 * 86400 * 1000)}
+    old    = {"id": "b", "isDone": True, "doneOn": _NOW - (10 * 86400 * 1000)}
+    result = filter_completed_since([recent, old], since_days=7, now_ms=_NOW)
+    assert [t["id"] for t in result] == ["a"]
+
+def test_completed_excludes_null_done_on():
+    task = {"id": "a", "isDone": True, "doneOn": None}
+    assert filter_completed_since([task], since_days=7, now_ms=_NOW) == []
