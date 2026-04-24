@@ -383,6 +383,10 @@
             if (data.stats) {
                 bridgeStatus.stats = { ...bridgeStatus.stats, ...data.stats };
             }
+
+            if (data.config && data.config.pollingFrequency) {
+                bridgeStatus.pollingFrequency = data.config.pollingFrequency;
+            }
             
             if (data.mcpPath) {
                 bridgeStatus.mcpPath = data.mcpPath;
@@ -463,7 +467,12 @@
             const logEntry = document.createElement('div');
             logEntry.className = `log-entry log-${cssLevel}`;
             logEntry.dataset.level = level;
-            logEntry.innerHTML = `<span class="log-timestamp">[${ts}]</span> ${message}`;
+            const tsSpan = document.createElement('span');
+            tsSpan.className = 'log-timestamp';
+            tsSpan.textContent = `[${ts}]`;
+
+            logEntry.appendChild(tsSpan);
+            logEntry.appendChild(document.createTextNode(` ${message}`));
 
             logsContainer.appendChild(logEntry);
             logsContainer.scrollTop = logsContainer.scrollHeight;
@@ -497,16 +506,7 @@
         }
 
         function clearLogs() {
-            const container = document.getElementById('logsContainer');
-            container.innerHTML = '';
-            lastSyncedLogId = 0;
-            // Re-sync from the beginning of the current buffer
-            if (window.parent && window.parent.mcpBridge) {
-                const status = window.parent.mcpBridge.getStatus();
-                if (status && status.logBuffer) {
-                    syncLogBuffer(status.logBuffer);
-                }
-            }
+            document.getElementById('logsContainer').innerHTML = '';
             addLogEntry('Logs cleared', 'info');
         }
 
@@ -549,7 +549,15 @@
                 const status = window.parent.mcpBridge.getStatus();
                 if (status) {
                     syncLogBuffer(status.logBuffer);
-                    updateBridgeStatus(status);
+                    // Map getStatus() shape to what updateBridgeStatus expects
+                    updateBridgeStatus({
+                        status: { type: status.isInitialized ? 'connected' : 'disconnected' },
+                        mcpPath: status.mcpServerPath,
+                        commandDir: status.commandDir,
+                        responseDir: status.responseDir,
+                        stats: status.stats,
+                        config: status.config
+                    });
                 }
             }
         }
