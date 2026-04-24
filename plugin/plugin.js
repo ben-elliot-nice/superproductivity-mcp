@@ -484,28 +484,22 @@ class MCPBridgePlugin {
           break;
           
         case 'addTask':
-          // Check if this is a subtask with SP syntax (@, #, +)
-          if (command.data.parentId && (command.data.title.includes('@') || command.data.title.includes('#') || command.data.title.includes('+'))) {
-            await this.log(`Subtask with syntax detected: ${command.data.title}`, 'debug');
-            
-            // Step 1: Create subtask without SP syntax
-            const titleWithoutSyntax = command.data.title
-              .replace(/@\w+/g, '')
-              .replace(/#\w+/g, '')
-              .replace(/\+\w+/g, '')
-              .trim();
-            const taskData = { ...command.data, title: titleWithoutSyntax };
-            
-            await this.log(`Creating subtask without syntax: ${titleWithoutSyntax}`, 'debug');
-            const taskId = await PluginAPI.addTask(taskData);
-            
-            // Step 2: Update with original title to trigger syntax parsing
-            await this.log(`Updating subtask with original title: ${command.data.title}`, 'debug');
-            await PluginAPI.updateTask(taskId, { title: command.data.title });
-            
-            result = taskId;
+          if (command.data.parentId) {
+            // SP's PluginAPI.addTask double-writes when parentId is supplied at creation time.
+            // Workaround: create without parentId first, then update to nest under parent.
+            // If the title contains SP scheduling/tag syntax (@, #, +), strip it for
+            // creation then restore via the same update so SP can parse it correctly.
+            const { parentId, title, ...rest } = command.data;
+            const hasSyntax = /[@#+]/.test(title);
+            const createTitle = hasSyntax
+              ? title.replace(/@\w+/g, '').replace(/#\w+/g, '').replace(/\+\w+/g, '').trim()
+              : title;
+            await this.log(`Creating subtask (parentId deferred to avoid SP double-write)`, 'debug');
+            const subtaskId = await PluginAPI.addTask({ ...rest, title: createTitle });
+            const updatePayload = hasSyntax ? { parentId, title } : { parentId };
+            await PluginAPI.updateTask(subtaskId, updatePayload);
+            result = subtaskId;
           } else {
-            // Regular task creation
             result = await PluginAPI.addTask(command.data);
           }
           break;
