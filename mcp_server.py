@@ -527,20 +527,28 @@ class SuperProductivityMCPServer:
             name: str, arguments: Dict[str, Any]
         ) -> List[types.TextContent]:
             try:
-                if name == "get_usage":
+                if name == "explain":
+                    result = await self.explain(arguments)
+                elif name == "get_usage":
                     result = {"success": True, "result": USAGE_GUIDE}
                 elif name == "get_tasks":
                     result = await self.get_tasks(arguments)
+                elif name == "get_completed_tasks":
+                    result = await self.get_completed_tasks(arguments)
                 elif name == "get_subtasks":
                     result = await self.get_subtasks(arguments)
                 elif name == "get_tasks_by_tag":
                     result = await self.get_tasks_by_tag(arguments)
                 elif name == "create_task":
                     result = await self.create_task(arguments)
+                elif name == "create_tasks":
+                    result = await self.create_tasks(arguments)
                 elif name == "update_task":
                     result = await self.update_task(arguments)
-                elif name == "complete_and_archive_task":
-                    result = await self.complete_and_archive_task(arguments)
+                elif name == "complete_task":
+                    result = await self.complete_task(arguments)
+                elif name == "convert_to_subtask":
+                    result = await self.convert_to_subtask(arguments)
                 elif name == "get_projects":
                     result = await self.get_projects(arguments)
                 elif name == "create_project":
@@ -681,40 +689,27 @@ class SuperProductivityMCPServer:
         raise ValueError(f"Unknown project '{project}'. Available: {available}")
 
     async def get_tasks(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Filtered task fetch with inline tag resolution."""
         tasks_resp, _ = await asyncio.gather(
             self.send_command("getTasks"),
             self._ensure_tag_cache()
         )
-
         if not tasks_resp.get("success"):
             return tasks_resp
-
-        tasks = tasks_resp.get("result", [])
-
-        # Filters
-        task_id = args.get("task_id")
-        if task_id:
-            tasks = [t for t in tasks if t.get("id") == task_id]
-
-        project_id = args.get("project_id")
-        if project_id:
-            tasks = [t for t in tasks if t.get("projectId") == project_id]
-
-        if not args.get("include_done", False):
-            tasks = [t for t in tasks if not t.get("isDone")]
-
-        if not args.get("include_subtasks", False):
-            tasks = [t for t in tasks if not t.get("parentId")]
-
-        search = args.get("search")
-        if search:
-            tasks = [t for t in tasks if search.lower() in t.get("title", "").lower()]
-
-        # Inline tag resolution
+        tasks = apply_task_filters(tasks_resp.get("result", []), args)
         tasks = [self._resolve_tags(t) for t in tasks]
-
         return {**tasks_resp, "result": tasks}
+
+    async def get_completed_tasks(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        since_days = args.get("since_days", 7)
+        resp, _ = await asyncio.gather(
+            self.send_command("getArchivedTasks"),
+            self._ensure_tag_cache()
+        )
+        if not resp.get("success"):
+            return resp
+        tasks = filter_completed_since(resp.get("result", []), since_days)
+        tasks = [self._resolve_tags(t) for t in tasks]
+        return {**resp, "result": tasks, "since_days": since_days}
 
     async def get_subtasks(self, args: Dict[str, Any]) -> Dict[str, Any]:
         """Find a parent task by partial name, optionally scoped to a partial project name, return its subtasks."""
@@ -817,39 +812,120 @@ class SuperProductivityMCPServer:
         }
 
     async def create_task(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        task_data = {
+        try:
+            tag_ids = await self._resolve_tag_names(args.get("tags", []))
+            project_id = None
+            if args.get("project"):
+                project_id = await self._resolve_project(args["project"])
+        except ValueError as e:
+            return {"success": False, "error": str(e)}
+
+        task_data: Dict[str, Any] = {
             "title": args.get("title", ""),
             "notes": args.get("notes", ""),
-            "timeEstimate": args.get("time_estimate", 0),
-            "projectId": args.get("project_id"),
+            "timeEstimate": parse_duration(args.get("time_estimate")) or 0,
+            "projectId": project_id,
             "parentId": args.get("parent_id"),
-            "tagIds": args.get("tag_ids", [])
+            "tagIds": tag_ids,
         }
+        if args.get("due_day"):
+            task_data["dueDay"] = parse_due_day(args["due_day"])
+        if args.get("due_datetime") is not None:
+            task_data["dueWithTime"] = parse_due_datetime(args["due_datetime"])
+
         return await self.send_command("addTask", data=task_data)
+
+    async def create_tasks(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        tasks = args.get("tasks", [])
+        if not tasks:
+            return {"success": False, "error": "tasks array must not be empty"}
+
+        async def build_and_send(t: dict):
+            try:
+                tag_ids = await self._resolve_tag_names(t.get("tags", []))
+                project_id = None
+                if t.get("project"):
+                    project_id = await self._resolve_project(t["project"])
+            except ValueError as e:
+                return {"success": False, "error": str(e), "title": t.get("title")}
+
+            data: Dict[str, Any] = {
+                "title": t.get("title", ""),
+                "notes": t.get("notes", ""),
+                "timeEstimate": parse_duration(t.get("time_estimate")) or 0,
+                "projectId": project_id,
+                "parentId": t.get("parent_id"),
+                "tagIds": tag_ids,
+            }
+            if t.get("due_day"):
+                data["dueDay"] = parse_due_day(t["due_day"])
+            if t.get("due_datetime") is not None:
+                data["dueWithTime"] = parse_due_datetime(t["due_datetime"])
+            return await self.send_command("addTask", data=data)
+
+        results = await asyncio.gather(*[build_and_send(t) for t in tasks])
+        successes = sum(1 for r in results if r.get("success"))
+        return {
+            "success": all(r.get("success") for r in results),
+            "created": successes,
+            "failed": len(results) - successes,
+            "results": list(results),
+        }
 
     async def update_task(self, args: Dict[str, Any]) -> Dict[str, Any]:
         task_id = args.get("task_id")
         if not task_id:
             return {"success": False, "error": "task_id is required"}
 
-        updates = {}
+        updates: Dict[str, Any] = {}
+
         if "title" in args:
             updates["title"] = args["title"]
         if "notes" in args:
             updates["notes"] = args["notes"]
         if "is_done" in args:
             updates["isDone"] = args["is_done"]
-            updates["doneOn"] = asyncio.get_event_loop().time() * 1000 if args["is_done"] else None
+            updates["doneOn"] = int(_time.time() * 1000) if args["is_done"] else None
         if "time_estimate" in args:
-            updates["timeEstimate"] = args["time_estimate"]
+            updates["timeEstimate"] = parse_duration(args["time_estimate"]) or 0
         if "time_spent" in args:
-            updates["timeSpent"] = args["time_spent"]
-        if "tag_ids" in args:
-            updates["tagIds"] = args["tag_ids"]
+            updates["timeSpent"] = parse_duration(args["time_spent"]) or 0
+        if "due_day" in args:
+            updates["dueDay"] = parse_due_day(args["due_day"])
+        if "due_datetime" in args:
+            updates["dueWithTime"] = parse_due_datetime(args["due_datetime"])
+
+        # Project: resolve name → ID
+        if "project" in args:
+            try:
+                updates["projectId"] = await self._resolve_project(args["project"])
+            except ValueError as e:
+                return {"success": False, "error": str(e)}
+
+        # Tags: three modes — replace, add, remove
+        if "tags" in args:
+            try:
+                updates["tagIds"] = await self._resolve_tag_names(args["tags"])
+            except ValueError as e:
+                return {"success": False, "error": str(e)}
+        elif args.get("add_tags") or args.get("remove_tags"):
+            # Fetch current task to merge
+            tasks_resp = await self.send_command("getTasks")
+            if not tasks_resp.get("success"):
+                return tasks_resp
+            task = next((t for t in tasks_resp.get("result", []) if t["id"] == task_id), None)
+            if not task:
+                return {"success": False, "error": f"Task {task_id} not found"}
+            try:
+                add_ids = await self._resolve_tag_names(args.get("add_tags", []))
+                remove_ids = await self._resolve_tag_names(args.get("remove_tags", []))
+            except ValueError as e:
+                return {"success": False, "error": str(e)}
+            updates["tagIds"] = merge_tag_ids(task.get("tagIds", []), add=add_ids, remove=remove_ids)
 
         return await self.send_command("updateTask", taskId=task_id, data=updates)
 
-    async def complete_and_archive_task(self, args: Dict[str, Any]) -> Dict[str, Any]:
+    async def complete_task(self, args: Dict[str, Any]) -> Dict[str, Any]:
         task_id = args.get("task_id")
         if not task_id:
             return {"success": False, "error": "task_id is required"}
