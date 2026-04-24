@@ -62,6 +62,86 @@ Tag IDs are automatically resolved to labels in every response — no separate g
 """.strip()
 
 
+EXPLAIN_TOPICS = {
+    "tools": """
+Tool hierarchy:
+
+Primary: get_tasks, update_task, create_task
+Convenience: get_subtasks (by partial name), get_tasks_by_tag (by partial tag name), get_completed_tasks
+Discovery: get_projects, get_tags (rarely needed — use tag names directly)
+Actions: complete_task, show_notification
+Batch: create_tasks (multiple tasks, one round trip)
+Setup: create_project, create_tag
+Debug: debug_directories
+""".strip(),
+
+    "filters": """
+get_tasks params. Default: open, top-level tasks only.
+
+project_id     string  —      Project ID (from get_projects)
+task_id        string  —      Single task lookup by ID
+search         string  —      Case-insensitive title substring
+include_done   bool    false  Include completed tasks
+include_subtasks bool  false  Include subtasks
+due_before     string  —      YYYY-MM-DD — due on or before
+due_after      string  —      YYYY-MM-DD — due on or after
+is_today       bool    false  Due today OR tagged TODAY
+
+Tag labels are resolved inline in every response — tagIds not returned.
+""".strip(),
+
+    "scheduling": """
+Scheduling fields (on create_task and update_task):
+
+  due_day       YYYY-MM-DD string — date-only due date
+  due_datetime  ISO 8601 string or ms timestamp — due date + time
+
+Time estimate / time spent (on create_task and update_task):
+
+  time_estimate  "2h" | "30m" | "2h30m" | "1.5h" | integer ms
+  time_spent     same format
+
+Special values (use as project or tag name):
+  TODAY   — built-in Today tag; adds task to Today view
+  INBOX   — default inbox project
+
+Examples:
+  due_day: "2026-04-25"
+  due_datetime: "2026-04-25T14:00:00"
+  time_estimate: "2h30m"
+""".strip(),
+
+    "discovery": """
+Common patterns:
+
+Scope by project:
+  get_projects() → note name/ID → get_tasks(project_id=...)
+
+Today's work:
+  get_tasks(is_today=true)
+
+Weekly review:
+  get_completed_tasks(since_days=7)
+
+Drill into a task:
+  get_tasks(search="partial name") → get_tasks(task_id=...)
+
+Subtasks (no IDs needed):
+  get_subtasks(task_name="partial") → resolves parent automatically
+
+Tag-based:
+  get_tasks_by_tag(tag_name="urgent") → partial name match
+
+Batch capture:
+  create_tasks(tasks=[{title: ..., due_day: ..., tags: [...]}, ...])
+
+Tags by name (no get_tags needed):
+  create_task(title="Fix login", tags=["urgent", "backend"])
+  update_task(task_id="...", add_tags=["in-progress"], remove_tags=["backlog"])
+""".strip(),
+}
+
+
 def today_str() -> str:
     """Return today's date as YYYY-MM-DD."""
     return date.today().isoformat()
