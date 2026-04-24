@@ -430,6 +430,7 @@ class MCPBridgePlugin {
       }
 
       if (commandResult.commands.length > 0) {
+        await this.log(`Processing ${commandResult.commands.length} command(s)`, 'debug');
         for (const commandInfo of commandResult.commands) {
           try {
             await this.executeCommand(commandInfo);
@@ -449,7 +450,20 @@ class MCPBridgePlugin {
 
   async executeCommand(commandInfo) {
     const { command, filename, path: commandPath } = commandInfo;
-    
+
+    // Log the incoming MCP call
+    await this.log(`→ ${command.action}`, 'info');
+
+    // Log arguments at debug level (truncated to avoid noise)
+    const argSummary = command.data
+      ? JSON.stringify(command.data).slice(0, 120)
+      : command.taskId
+      ? `taskId=${command.taskId}`
+      : '';
+    if (argSummary) {
+      await this.log(`  args: ${argSummary}`, 'debug');
+    }
+
     try {
       let result;
       const startTime = Date.now();
@@ -670,10 +684,11 @@ class MCPBridgePlugin {
       
       this.stats.commandsProcessed++;
       this.stats.lastCommandTime = Date.now();
-      
-      
+
+      await this.log(`✓ ${command.action} [${executionTime}ms]`, 'info');
+
     } catch (error) {
-      await this.log(`Command failed: ${command.action} - ${error.message}`, 'error');
+      await this.log(`✗ ${command.action}: ${error.message}`, 'error');
       
       // Write error response
       await this.writeCommandResponse(command.id || filename, {
