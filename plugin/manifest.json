@@ -2,7 +2,7 @@
   "id": "sp-mcp-bridge",
   "name": "MCP Bridge",
   "description": "Bridge between Super Productivity and MCP (Model Context Protocol) servers for Claude Desktop integration",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "manifestVersion": 1,
   "author": "Super Productivity Team",
   "homepage": "https://github.com/johannesjo/super-productivity",
@@ -15,6 +15,7 @@
   "isSkipMenuEntry": true,
   "hooks": ["taskUpdate", "taskComplete", "taskDelete", "currentTaskChange"],
   "changelog": {
+    "1.1.0": "Structured log levels, MCP call instrumentation, dashboard log delivery fix, log level selector UI",
     "1.0.0": "Initial release with full MCP bridge functionality"
   }
 }
