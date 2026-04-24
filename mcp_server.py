@@ -582,6 +582,75 @@ class SuperProductivityMCPServer:
         task["tags"] = [self._tag_cache.get(tid, tid) for tid in tag_ids]
         return task
 
+    async def _resolve_tag_names(self, names: list) -> list:
+        """Convert tag names (or IDs) to tag IDs. Resolves from cache.
+
+        Accepts exact names, partial names, or raw IDs.
+        Raises ValueError on ambiguous or unknown names.
+        """
+        if not names:
+            return []
+        await self._ensure_tag_cache()
+        ids = []
+        for name in names:
+            # Direct ID passthrough
+            if name in self._tag_cache:
+                ids.append(name)
+                continue
+            # Exact label match (case-insensitive)
+            exact = [tid for tid, label in self._tag_cache.items()
+                     if label.lower() == name.lower()]
+            if len(exact) == 1:
+                ids.append(exact[0])
+                continue
+            # Partial label match
+            partial = [tid for tid, label in self._tag_cache.items()
+                       if name.lower() in label.lower()]
+            if len(partial) == 1:
+                ids.append(partial[0])
+            elif len(partial) > 1:
+                options = [self._tag_cache[t] for t in partial]
+                raise ValueError(f"Ambiguous tag '{name}' — matches: {options}. Be more specific.")
+            else:
+                available = list(self._tag_cache.values())
+                raise ValueError(f"Unknown tag '{name}'. Available tags: {available}")
+        return ids
+
+    async def _resolve_project(self, project: str) -> str:
+        """Accept project name or ID. Returns the project ID.
+
+        Resolution order:
+          1. Exact ID match
+          2. Exact title match (case-insensitive)
+          3. Partial title match (if unambiguous)
+        Raises ValueError on ambiguous or not found.
+        """
+        resp = await self.send_command("getAllProjects")
+        if not resp.get("success"):
+            raise ValueError("Could not fetch projects for name resolution")
+        projects = resp.get("result", [])
+
+        # Exact ID
+        for p in projects:
+            if p["id"] == project:
+                return project
+
+        # Exact title
+        exact = [p for p in projects if p["title"].lower() == project.lower()]
+        if len(exact) == 1:
+            return exact[0]["id"]
+
+        # Partial title
+        partial = [p for p in projects if project.lower() in p["title"].lower()]
+        if len(partial) == 1:
+            return partial[0]["id"]
+        elif len(partial) > 1:
+            options = [p["title"] for p in partial]
+            raise ValueError(f"Ambiguous project '{project}' — matches: {options}. Be more specific.")
+
+        available = [p["title"] for p in projects]
+        raise ValueError(f"Unknown project '{project}'. Available: {available}")
+
     async def get_tasks(self, args: Dict[str, Any]) -> Dict[str, Any]:
         """Filtered task fetch with inline tag resolution."""
         tasks_resp, _ = await asyncio.gather(
