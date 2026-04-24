@@ -106,6 +106,64 @@ The plugin uses file-based communication through:
 
 Commands are exchanged through `plugin_commands/` and `plugin_responses/` directories.
 
+## Contributing
+
+Pull requests are welcome. Please open an issue first if you're planning a significant change.
+
+### Local Environment
+
+This project uses [mise](https://mise.jdx.dev/) to manage the Python runtime. Install it first:
+
+```bash
+brew install mise
+```
+
+Then from the repo root, let mise install the correct Python version:
+
+```bash
+mise install
+```
+
+Dependencies are managed with [uv](https://docs.astral.sh/uv/). Install it, then sync the project:
+
+```bash
+brew install uv
+uv sync
+```
+
+This creates a `.venv` and installs all dependencies from `uv.lock`.
+
+### MCP Config
+
+Copy `.mcp.json.example` to `.mcp.json` and update the paths to point to your local clone:
+
+```bash
+cp .mcp.json.example .mcp.json
+```
+
+`.mcp.json` is gitignored — it contains machine-specific absolute paths and should not be committed.
+
+### Running the Server
+
+```bash
+uv run mcp_server.py
+```
+
+Or let Claude Code pick it up automatically via `.mcp.json`.
+
+### Repo Structure
+
+```
+mcp_server.py       # MCP server (Python, run with uv)
+plugin/             # Super Productivity plugin files
+  plugin.js         # Main plugin JS (install via SP Settings → Plugins)
+  plugin.zip        # Pre-packaged zip for convenience
+  index.html        # Plugin UI
+  manifest.json     # Plugin manifest
+setup.sh / .bat     # One-shot setup scripts for end users
+merge_config.py     # Helper used by setup.bat to merge Claude Desktop config
+```
+
 ## Troubleshooting
 
 ### Plugin Not Loading
