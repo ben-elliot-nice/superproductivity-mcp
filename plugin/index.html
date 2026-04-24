@@ -194,6 +194,10 @@
             color: #f44336;
         }
 
+        .log-debug {
+            color: #757575;
+        }
+
         .log-timestamp {
             color: #888;
             font-size: 0.75rem;
@@ -319,12 +323,12 @@
             responsesDir: null,
             pollingFrequency: 2
         };
+        let lastSyncedLogId = 0;
 
         function init() {
             loadSettings();
             updateUI();
             startStatusUpdates();
-            window.addEventListener('message', handlePluginMessage);
             requestPluginStatus();
         }
 
@@ -334,9 +338,13 @@
         }
 
 
-        function handlePluginMessage(event) {
-            if (event.data && event.data.type === 'mcp-bridge-update') {
-                updateBridgeStatus(event.data.data);
+        function syncLogBuffer(logBuffer) {
+            if (!Array.isArray(logBuffer)) return;
+            const newEntries = logBuffer.filter(e => e.id > lastSyncedLogId);
+            if (newEntries.length === 0) return;
+            lastSyncedLogId = newEntries[newEntries.length - 1].id;
+            for (const entry of newEntries) {
+                addLogEntry(entry.message, entry.level, entry.timestamp);
             }
         }
 
@@ -359,10 +367,6 @@
             
             if (data.responseDir) {
                 bridgeStatus.responsesDir = data.responseDir;
-            }
-            
-            if (data.log) {
-                addLogEntry(data.log.message, data.log.type);
             }
             
             updateUI();
@@ -422,19 +426,22 @@
             }
         }
 
-        function addLogEntry(message, type = 'info') {
+        function addLogEntry(message, level = 'info', timestamp = null) {
             const logsContainer = document.getElementById('logsContainer');
-            const timestamp = new Date().toLocaleTimeString();
-            
+            const cssLevel = level === 'warn' ? 'warning' : level;
+            const ts = timestamp
+                ? new Date(timestamp).toLocaleTimeString()
+                : new Date().toLocaleTimeString();
+
             const logEntry = document.createElement('div');
-            logEntry.className = `log-entry log-${type}`;
-            logEntry.innerHTML = `<span class="log-timestamp">[${timestamp}]</span> ${message}`;
-            
+            logEntry.className = `log-entry log-${cssLevel}`;
+            logEntry.dataset.level = level;
+            logEntry.innerHTML = `<span class="log-timestamp">[${ts}]</span> ${message}`;
+
             logsContainer.appendChild(logEntry);
             logsContainer.scrollTop = logsContainer.scrollHeight;
-            
-            // Keep only last 50 log entries
-            while (logsContainer.children.length > 50) {
+
+            while (logsContainer.children.length > 200) {
                 logsContainer.removeChild(logsContainer.firstChild);
             }
         }
@@ -484,6 +491,7 @@
             if (window.parent && window.parent.mcpBridge) {
                 const status = window.parent.mcpBridge.getStatus();
                 if (status) {
+                    syncLogBuffer(status.logBuffer);
                     updateBridgeStatus(status);
                 }
             }
