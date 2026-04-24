@@ -1,5 +1,7 @@
 // MCP Bridge Plugin for Super Productivity
 
+const LOG_LEVELS = { debug: 0, info: 1, warn: 2, error: 3 };
+
 class MCPBridgePlugin {
   constructor() {
     this.mcpServerPath = null;
@@ -894,15 +896,16 @@ class MCPBridgePlugin {
   }
 
   async log(message, level = 'info') {
-    const levels = { debug: 0, info: 1, warn: 2, error: 3 };
-    const configThreshold = levels[this.config.logLevel] ?? 1;
-    const msgLevel = levels[level] ?? 1;
+    const configThreshold = LOG_LEVELS[this.config.logLevel] ?? 1;
+    const msgLevel = LOG_LEVELS[level] ?? 1;
 
     if (msgLevel < configThreshold) return;
 
+    const normalizedLevel = LOG_LEVELS[level] !== undefined ? level : 'info';
+
     const entry = {
       id: ++this.logSeq,
-      level,
+      level: normalizedLevel,
       message,
       timestamp: Date.now()
     };
@@ -911,7 +914,7 @@ class MCPBridgePlugin {
     if (this.logBuffer.length > 200) this.logBuffer.shift();
 
     const ts = new Date().toISOString();
-    console.log(`[${ts}] [${level.toUpperCase()}] MCP Bridge: ${message}`);
+    console.log(`[${ts}] [${normalizedLevel.toUpperCase()}] MCP Bridge: ${message}`);
   }
 }
 
