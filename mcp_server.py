@@ -102,6 +102,26 @@ def parse_duration(value) -> Optional[int]:
         return None
 
 
+def parse_due_day(value) -> Optional[str]:
+    """Accept YYYY-MM-DD string or None."""
+    return value if value else None
+
+
+def parse_due_datetime(value) -> Optional[int]:
+    """Accept ms timestamp (int) or ISO 8601 string. Returns ms timestamp."""
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return int(value)
+    try:
+        dt = datetime.fromisoformat(str(value))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return int(dt.timestamp() * 1000)
+    except (ValueError, TypeError):
+        return None
+
+
 class SuperProductivityMCPServer:
     def __init__(self):
         self.server = Server("super-productivity")

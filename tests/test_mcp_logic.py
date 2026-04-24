@@ -31,3 +31,23 @@ def test_today_str_format():
     result = today_str()
     parts = result.split("-")
     assert len(parts) == 3 and len(parts[0]) == 4
+
+
+from mcp_server import parse_due_day, parse_due_datetime
+
+
+def test_parse_due_day_passthrough():
+    assert parse_due_day("2026-04-25") == "2026-04-25"
+
+def test_parse_due_day_none():
+    assert parse_due_day(None) is None
+
+def test_parse_due_datetime_int_passthrough():
+    assert parse_due_datetime(1714000000000) == 1714000000000
+
+def test_parse_due_datetime_iso():
+    result = parse_due_datetime("2026-04-25T14:00:00")
+    assert isinstance(result, int) and result > 0
+
+def test_parse_due_datetime_none():
+    assert parse_due_datetime(None) is None
