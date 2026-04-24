@@ -8,6 +8,7 @@ import os
 import re
 import sys
 import time as _time
+import uuid
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
@@ -25,7 +26,7 @@ Tool hierarchy:
 Primary: get_tasks, update_task, create_task
 Convenience: get_subtasks (by partial name), get_tasks_by_tag (by partial tag name), get_completed_tasks
 Discovery: get_projects, get_tags (rarely needed — use tag names directly)
-Actions: complete_task, show_notification
+Actions: complete_task, convert_to_subtask, show_notification
 Batch: create_tasks (multiple tasks, one round trip)
 Setup: create_project, create_tag
 Debug: debug_directories
@@ -139,8 +140,12 @@ def parse_duration(value) -> Optional[int]:
 
 
 def parse_due_day(value) -> Optional[str]:
-    """Accept YYYY-MM-DD string or None."""
-    return value if value else None
+    """Accept YYYY-MM-DD string or None. Returns None for invalid format."""
+    if not value:
+        return None
+    if re.fullmatch(r'\d{4}-\d{2}-\d{2}', str(value)):
+        return str(value)
+    return None
 
 
 def parse_due_datetime(value) -> Optional[int]:
@@ -536,8 +541,8 @@ class SuperProductivityMCPServer:
         """Send a command to Super Productivity plugin"""
         command = {
             "action": action,
-            "id": f"{action}_{asyncio.get_event_loop().time()}",
-            "timestamp": asyncio.get_event_loop().time(),
+            "id": f"{action}_{uuid.uuid4().hex}",
+            "timestamp": asyncio.get_running_loop().time(),
             **kwargs
         }
 
@@ -941,7 +946,7 @@ class SuperProductivityMCPServer:
         if not create_resp.get("success"):
             return {"success": False, "error": f"Failed to create subtask: {create_resp.get('error')}"}
 
-        # Archive the original (SP doesn't support deletion)
+        # Mark original as done (SP has no deletion; setTaskDone is the closest to archive)
         archive_resp = await self.send_command("setTaskDone", taskId=task_id)
 
         return {
@@ -982,7 +987,11 @@ class SuperProductivityMCPServer:
         return result
 
     async def show_notification(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        return await self.send_command("showSnack", message=args.get("message", ""))
+        return await self.send_command(
+            "showSnack",
+            message=args.get("message", ""),
+            type=args.get("type", "info").upper()
+        )
 
     async def debug_directories(self, args: Dict[str, Any]) -> Dict[str, Any]:
         return {
