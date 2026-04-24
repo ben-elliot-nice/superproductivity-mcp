@@ -1,5 +1,7 @@
 // MCP Bridge Plugin for Super Productivity
 
+const LOG_LEVELS = { debug: 0, info: 1, warn: 2, error: 3 };
+
 class MCPBridgePlugin {
   constructor() {
     this.mcpServerPath = null;
@@ -12,9 +14,9 @@ class MCPBridgePlugin {
     // Configuration
     this.config = {
       commandCheckIntervalMs: 2000, // Check for commands every 2 seconds (configurable)
-      mcpCommandDir: null,          // Will be set during initialization  
+      mcpCommandDir: null,          // Will be set during initialization
       mcpResponseDir: null,         // Will be set during initialization
-      debugMode: true,
+      logLevel: 'info',             // debug | info | warn | error
       maxConcurrentCommands: 5,
       configFile: null              // Will be set to store settings
     };
@@ -26,6 +28,9 @@ class MCPBridgePlugin {
       errors: 0,
       startTime: Date.now()
     };
+
+    this.logSeq = 0;
+    this.logBuffer = [];        // max 200 entries: {id, level, message, timestamp}
   }
 
   async loadConfig() {
@@ -61,10 +66,11 @@ class MCPBridgePlugin {
       if (result && result.success && result.result && result.result.success) {
         const savedConfig = result.result.config;
         this.config.commandCheckIntervalMs = savedConfig.commandCheckIntervalMs || 2000;
+        this.config.logLevel = savedConfig.logLevel || 'info';
         return true;
       }
     } catch (error) {
-      await this.log(`Failed to load config: ${error.message}`);
+      await this.log(`Failed to load config: ${error.message}`, 'warn');
     }
     return false;
   }
@@ -72,7 +78,8 @@ class MCPBridgePlugin {
   async saveConfig() {
     try {
       const configData = {
-        commandCheckIntervalMs: this.config.commandCheckIntervalMs
+        commandCheckIntervalMs: this.config.commandCheckIntervalMs,
+        logLevel: this.config.logLevel
       };
       
       const result = await PluginAPI.executeNodeScript({
@@ -97,7 +104,7 @@ class MCPBridgePlugin {
         return true;
       }
     } catch (error) {
-      await this.log(`Failed to save config: ${error.message}`);
+      await this.log(`Failed to save config: ${error.message}`, 'warn');
     }
     return false;
   }
@@ -107,45 +114,48 @@ class MCPBridgePlugin {
     if (newIntervalMs >= 1000 && newIntervalMs <= 60000) {
       this.config.commandCheckIntervalMs = newIntervalMs;
       await this.saveConfig();
-      
-      // Restart command processing with new interval
       this.startCommandProcessing();
-      
-      this.updateUI({
-        config: { pollingFrequency: frequencySeconds },
-        log: { message: `Polling updated to ${frequencySeconds}s`, type: 'info' }
-      });
+      await this.log(`Polling updated to ${frequencySeconds}s`, 'info');
       return true;
     }
     return false;
   }
 
+  async updateLogLevel(level) {
+    const valid = ['debug', 'info', 'warn', 'error'];
+    if (!valid.includes(level)) return false;
+    this.config.logLevel = level;
+    await this.saveConfig();
+    await this.log(`Log level set to ${level}`, 'info');
+    return true;
+  }
+
   async init() {
-    await this.log('MCP Bridge Plugin initializing...');
-    
+    await this.log('MCP Bridge Plugin initializing...', 'info');
+
     try {
       // Find the MCP server and set up communication directories
       await this.setupMCPCommunication();
-      
+
       // Set config file path and load configuration (non-blocking)
       this.config.configFile = this.mcpServerPath + '/mcp_bridge_config.json';
-      this.loadConfig().catch(e => this.log(`Config loading failed: ${e.message}`));
-      
+      this.loadConfig().catch(e => this.log(`Config loading failed: ${e.message}`, 'warn'));
+
       // Start the command processing loop
       this.startCommandProcessing();
-      
+
       // Register event hooks for Super Productivity changes
       this.registerHooks();
-      
+
       // Register UI elements
       this.registerUI();
-      
+
       this.isInitialized = true;
-      await this.log('MCP Bridge Plugin initialized successfully!');
-      
+      await this.log('MCP Bridge Plugin initialized successfully!', 'info');
+
       // Log success (skip notifications for now)
       console.log('🔗 MCP Bridge connected! Ready for commands.');
-      
+
       // Send initialization status to UI
       this.updateUI({
         status: { type: 'connected', message: '✅ Connected and ready' },
@@ -156,9 +166,9 @@ class MCPBridgePlugin {
           pollingFrequency: Math.floor(this.config.commandCheckIntervalMs / 1000)
         }
       });
-      
+
     } catch (error) {
-      await this.log(`Failed to initialize: ${error.message}`);
+      await this.log(`Failed to initialize: ${error.message}`, 'error');
       console.error('MCP Bridge failed:', error.message);
       this.updateUI({
         status: { type: 'disconnected', message: `❌ ${error.message}` }
@@ -227,10 +237,10 @@ class MCPBridgePlugin {
         this.config.mcpResponseDir = scriptResult.responseDir;
         return;
       } else {
-        await this.log('AppData setup failed, trying fallback method');
+        await this.log('AppData setup failed, trying fallback method', 'warn');
       }
     } catch (e) {
-      await this.log(`AppData setup failed: ${e.message}`);
+      await this.log(`AppData setup failed: ${e.message}`, 'warn');
     }
     
     try {
@@ -264,7 +274,7 @@ class MCPBridgePlugin {
         return;
       }
     } catch (fallbackError) {
-      await this.log(`Fallback setup failed: ${fallbackError.message}`);
+      await this.log(`Fallback setup failed: ${fallbackError.message}`, 'warn');
     }
     
     // If we get here, everything failed
@@ -284,7 +294,7 @@ class MCPBridgePlugin {
       try {
         await this.processNewCommands();
       } catch (error) {
-        await this.log(`Command processing error: ${error.message}`);
+        await this.log(`Command processing error: ${error.message}`, 'error');
         this.stats.errors++;
       }
     }, this.config.commandCheckIntervalMs);
@@ -392,46 +402,47 @@ class MCPBridgePlugin {
 
       // Add comprehensive null checking
       if (!result) {
-        await this.log('executeNodeScript returned null/undefined result');
+        await this.log('executeNodeScript returned null/undefined result', 'warn');
         return;
       }
-      
+
       if (!result.hasOwnProperty('success')) {
-        await this.log('executeNodeScript result missing success property');
+        await this.log('executeNodeScript result missing success property', 'warn');
         return;
       }
-      
+
       if (!result.success) {
-        await this.log(`Command processing failed: ${result.error || 'Unknown error'}`);
+        await this.log(`Command processing failed: ${result.error || 'Unknown error'}`, 'error');
         return;
       }
-      
+
       // The result from executeNodeScript is wrapped in a 'result' property
       const commandResult = result.result;
-      
+
       if (!commandResult || !commandResult.hasOwnProperty('commands')) {
-        await this.log('executeNodeScript result.result missing commands property');
+        await this.log('executeNodeScript result.result missing commands property', 'warn');
         return;
       }
-      
+
       if (!Array.isArray(commandResult.commands)) {
-        await this.log('executeNodeScript result.result.commands is not an array');
+        await this.log('executeNodeScript result.result.commands is not an array', 'warn');
         return;
       }
-      
+
       if (commandResult.commands.length > 0) {
+        await this.log(`Processing ${commandResult.commands.length} command(s)`, 'debug');
         for (const commandInfo of commandResult.commands) {
           try {
             await this.executeCommand(commandInfo);
             this.lastProcessedCommand = Math.max(this.lastProcessedCommand, commandInfo.timestamp);
           } catch (error) {
-            await this.log(`Command execution failed: ${error.message}`);
+            await this.log(`Command execution failed: ${error.message}`, 'error');
           }
         }
       }
-      
+
     } catch (error) {
-      await this.log(`Error in processNewCommands: ${error.message}`);
+      await this.log(`Error in processNewCommands: ${error.message}`, 'error');
       this.stats.errors++;
     }
   }
@@ -439,7 +450,20 @@ class MCPBridgePlugin {
 
   async executeCommand(commandInfo) {
     const { command, filename, path: commandPath } = commandInfo;
-    
+
+    // Log the incoming MCP call
+    await this.log(`→ ${command.action}`, 'info');
+
+    // Log arguments at debug level (truncated to avoid noise)
+    const argSummary = command.data
+      ? JSON.stringify(command.data).slice(0, 120)
+      : command.taskId
+      ? `taskId=${command.taskId}`
+      : '';
+    if (argSummary) {
+      await this.log(`  args: ${argSummary}`, 'debug');
+    }
+
     try {
       let result;
       const startTime = Date.now();
@@ -462,7 +486,7 @@ class MCPBridgePlugin {
         case 'addTask':
           // Check if this is a subtask with SP syntax (@, #, +)
           if (command.data.parentId && (command.data.title.includes('@') || command.data.title.includes('#') || command.data.title.includes('+'))) {
-            await this.log(`Subtask with syntax detected: ${command.data.title}`);
+            await this.log(`Subtask with syntax detected: ${command.data.title}`, 'debug');
             
             // Step 1: Create subtask without SP syntax
             const titleWithoutSyntax = command.data.title
@@ -472,11 +496,11 @@ class MCPBridgePlugin {
               .trim();
             const taskData = { ...command.data, title: titleWithoutSyntax };
             
-            await this.log(`Creating subtask without syntax: ${titleWithoutSyntax}`);
+            await this.log(`Creating subtask without syntax: ${titleWithoutSyntax}`, 'debug');
             const taskId = await PluginAPI.addTask(taskData);
             
             // Step 2: Update with original title to trigger syntax parsing
-            await this.log(`Updating subtask with original title: ${command.data.title}`);
+            await this.log(`Updating subtask with original title: ${command.data.title}`, 'debug');
             await PluginAPI.updateTask(taskId, { title: command.data.title });
             
             result = taskId;
@@ -660,10 +684,11 @@ class MCPBridgePlugin {
       
       this.stats.commandsProcessed++;
       this.stats.lastCommandTime = Date.now();
-      
-      
+
+      await this.log(`✓ ${command.action} [${executionTime}ms]`, 'info');
+
     } catch (error) {
-      await this.log(`Command failed: ${command.action} - ${error.message}`);
+      await this.log(`✗ ${command.action}: ${error.message}`, 'error');
       
       // Write error response
       await this.writeCommandResponse(command.id || filename, {
@@ -740,7 +765,7 @@ class MCPBridgePlugin {
       
       
     } catch (error) {
-      await this.log(`Error writing command response: ${error.message}`);
+      await this.log(`Error writing command response: ${error.message}`, 'error');
     }
   }
 
@@ -763,7 +788,7 @@ class MCPBridgePlugin {
       
       
     } catch (error) {
-      await this.log(`Error deleting command file: ${error.message}`);
+      await this.log(`Error deleting command file: ${error.message}`, 'warn');
     }
   }
 
@@ -834,7 +859,7 @@ class MCPBridgePlugin {
       
       
     } catch (error) {
-      await this.log(`Failed to send event to MCP: ${error.message}`);
+      await this.log(`Failed to send event to MCP: ${error.message}`, 'warn');
     }
   }
 
@@ -863,18 +888,17 @@ class MCPBridgePlugin {
       commandDir: this.config.mcpCommandDir,
       responseDir: this.config.mcpResponseDir,
       stats: this.stats,
+      logBuffer: this.logBuffer,
       config: {
         pollingFrequency: Math.floor(this.config.commandCheckIntervalMs / 1000),
-        debugMode: this.config.debugMode
+        logLevel: this.config.logLevel
       }
     };
   }
 
   async forceCommandCheck() {
     await this.processNewCommands();
-    this.updateUI({
-      log: { message: 'Force command check completed', type: 'success' }
-    });
+    await this.log('Force command check completed', 'info');
   }
 
   async cleanup() {
@@ -883,19 +907,29 @@ class MCPBridgePlugin {
       this.commandWatchInterval = null;
     }
     
-    await this.log('MCP Bridge Plugin cleaned up');
+    await this.log('MCP Bridge Plugin cleaned up', 'info');
   }
 
-  async log(message) {
-    if (this.config.debugMode) {
-      const timestamp = new Date().toISOString();
-      console.log(`[${timestamp}] MCP Bridge: ${message}`);
-      
-      // Send to UI
-      this.updateUI({
-        log: { message: message, type: 'info' }
-      });
-    }
+  async log(message, level = 'info') {
+    const configThreshold = LOG_LEVELS[this.config.logLevel] ?? 1;
+    const msgLevel = LOG_LEVELS[level] ?? 1;
+
+    if (msgLevel < configThreshold) return;
+
+    const normalizedLevel = LOG_LEVELS[level] !== undefined ? level : 'info';
+
+    const entry = {
+      id: ++this.logSeq,
+      level: normalizedLevel,
+      message,
+      timestamp: Date.now()
+    };
+
+    this.logBuffer.push(entry);
+    if (this.logBuffer.length > 200) this.logBuffer.shift();
+
+    const ts = new Date().toISOString();
+    console.log(`[${ts}] [${normalizedLevel.toUpperCase()}] MCP Bridge: ${message}`);
   }
 }
 
