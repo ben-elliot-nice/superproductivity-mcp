@@ -7,6 +7,8 @@ import logging
 import os
 import re
 import sys
+import time as _time
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
@@ -58,6 +60,46 @@ Tag IDs are automatically resolved to labels in every response — no separate g
 3. `get_tasks(task_id=...)` → drill into a specific task with full detail
 4. `update_task` / `create_task` → act on what you found
 """.strip()
+
+
+def today_str() -> str:
+    """Return today's date as YYYY-MM-DD."""
+    return date.today().isoformat()
+
+
+def parse_duration(value) -> Optional[int]:
+    """Parse duration to milliseconds.
+
+    Accepts:
+      int/float  — treated as ms already
+      "2h"       → 7200000
+      "30m"      → 1800000
+      "2h30m"    → 9000000
+      "1.5h"     → 5400000
+    Returns None for None input.
+    """
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return int(value)
+    s = str(value).strip().lower()
+    # compound: 2h30m
+    m = re.fullmatch(r'(\d+(?:\.\d+)?)h(\d+)m', s)
+    if m:
+        return int((float(m.group(1)) * 60 + int(m.group(2))) * 60 * 1000)
+    # hours: 2h or 1.5h
+    m = re.fullmatch(r'(\d+(?:\.\d+)?)h', s)
+    if m:
+        return int(float(m.group(1)) * 3600 * 1000)
+    # minutes: 30m
+    m = re.fullmatch(r'(\d+(?:\.\d+)?)m', s)
+    if m:
+        return int(float(m.group(1)) * 60 * 1000)
+    # plain number string
+    try:
+        return int(float(s))
+    except (ValueError, TypeError):
+        return None
 
 
 class SuperProductivityMCPServer:
