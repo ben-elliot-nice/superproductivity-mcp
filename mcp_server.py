@@ -296,187 +296,216 @@ class SuperProductivityMCPServer:
         async def handle_list_tools() -> List[types.Tool]:
             return [
                 types.Tool(
-                    name="get_usage",
-                    description="Returns the tool usage guide — tool hierarchy, get_tasks filter reference, and recommended discovery pattern. Call this first in a new session.",
-                    inputSchema={"type": "object", "properties": {}}
-                ),
-                types.Tool(
-                    name="get_tasks",
-                    description=(
-                        "Get tasks from Super Productivity. Defaults to open top-level tasks only. "
-                        "Use filters to scope results — always filter by project_id when you know it. "
-                        "Tag labels are resolved inline; no separate get_tags call needed. "
-                        "Use task_id for single-task lookup or search for title substring match."
-                    ),
+                    name="explain",
+                    description="Reference docs on demand. Topics: tools, filters, scheduling, discovery.",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "project_id": {
+                            "topic": {
                                 "type": "string",
-                                "description": "Scope results to a specific project (get IDs from get_projects)"
-                            },
-                            "task_id": {
-                                "type": "string",
-                                "description": "Return a single task by ID"
-                            },
-                            "search": {
-                                "type": "string",
-                                "description": "Case-insensitive title substring match"
-                            },
-                            "include_done": {
-                                "type": "boolean",
-                                "description": "Include completed tasks (default: false)",
-                                "default": False
-                            },
-                            "include_subtasks": {
-                                "type": "boolean",
-                                "description": "Include subtasks — default false returns top-level only",
-                                "default": False
+                                "enum": ["tools", "filters", "scheduling", "discovery"]
                             }
+                        },
+                        "required": ["topic"]
+                    }
+                ),
+                types.Tool(
+                    name="get_tasks",
+                    description="Fetch tasks. Defaults: open, top-level. Unfamiliar with params? Call explain('filters').",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "project_id": {"type": "string"},
+                            "task_id": {"type": "string"},
+                            "search": {"type": "string"},
+                            "include_done": {"type": "boolean", "default": False},
+                            "include_subtasks": {"type": "boolean", "default": False},
+                            "due_before": {"type": "string", "description": "YYYY-MM-DD"},
+                            "due_after": {"type": "string", "description": "YYYY-MM-DD"},
+                            "is_today": {"type": "boolean", "default": False}
+                        }
+                    }
+                ),
+                types.Tool(
+                    name="get_completed_tasks",
+                    description="Archived/completed tasks. since_days defaults to 7.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "since_days": {"type": "integer", "default": 7}
                         }
                     }
                 ),
                 types.Tool(
                     name="get_subtasks",
-                    description=(
-                        "Get subtasks of a parent task using partial name matching. "
-                        "Optionally scope to a project by partial name. "
-                        "Single call — resolves project, finds parent, returns subtasks with inline tag labels."
-                    ),
+                    description="Subtasks of a parent task, matched by partial name.",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "task_name": {
-                                "type": "string",
-                                "description": "Partial name of the parent task (case-insensitive substring)"
-                            },
-                            "project_name": {
-                                "type": "string",
-                                "description": "Partial project name to scope the search (optional)"
-                            }
+                            "task_name": {"type": "string"},
+                            "project_name": {"type": "string"}
                         },
                         "required": ["task_name"]
                     }
                 ),
                 types.Tool(
                     name="get_tasks_by_tag",
-                    description=(
-                        "Get all tasks that have a given tag, matched by partial tag name. "
-                        "Single call — resolves tag from cache, filters tasks, returns with inline tag labels."
-                    ),
+                    description="Tasks with a given tag, matched by partial name.",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "tag_name": {
-                                "type": "string",
-                                "description": "Partial tag name to match (case-insensitive substring)"
-                            },
-                            "include_done": {
-                                "type": "boolean",
-                                "description": "Include completed tasks (default: false)",
-                                "default": False
-                            }
+                            "tag_name": {"type": "string"},
+                            "include_done": {"type": "boolean", "default": False}
                         },
                         "required": ["tag_name"]
                     }
                 ),
                 types.Tool(
                     name="create_task",
-                    description="Create a new task in Super Productivity. Convert natural language time/date references to SP syntax in the title (@1days, @fri 3pm, @7days, etc). Add #tags and +projects as needed.",
+                    description="Create a task. For scheduling and time syntax call explain('scheduling').",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "title": {
-                                "type": "string",
-                                "description": "Task title. Use @Xdays/@Yweeks/@Zmonths for scheduling, #tag for tags, +project for projects."
-                            },
-                            "notes": {"type": "string", "description": "Task notes/description"},
-                            "project_id": {"type": "string", "description": "Project ID"},
-                            "parent_id": {"type": "string", "description": "Parent task ID for subtasks"},
-                            "tag_ids": {
+                            "title": {"type": "string"},
+                            "notes": {"type": "string"},
+                            "project": {"type": "string", "description": "Project name or ID"},
+                            "parent_id": {"type": "string"},
+                            "tags": {
                                 "type": "array",
                                 "items": {"type": "string"},
-                                "description": "Tag IDs to assign"
+                                "description": "Tag names (resolved server-side)"
                             },
-                            "time_estimate": {"type": "integer", "description": "Time estimate in milliseconds"}
+                            "time_estimate": {"description": "e.g. '2h', '30m', or ms integer"},
+                            "due_day": {"type": "string", "description": "YYYY-MM-DD"},
+                            "due_datetime": {"description": "ISO string or ms timestamp"}
                         },
                         "required": ["title"]
                     }
                 ),
                 types.Tool(
-                    name="update_task",
-                    description="Update an existing task. Only include fields you want to change. Convert natural language time/date references to SP syntax.",
+                    name="create_tasks",
+                    description="Batch create multiple tasks in one round trip.",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "task_id": {"type": "string", "description": "Task ID to update"},
-                            "title": {"type": "string", "description": "New title (use @syntax for scheduling)"},
-                            "notes": {"type": "string", "description": "New notes"},
-                            "is_done": {"type": "boolean", "description": "Mark done/undone"},
-                            "time_estimate": {"type": "integer", "description": "Time estimate in milliseconds"},
-                            "time_spent": {"type": "integer", "description": "Time spent in milliseconds"},
-                            "tag_ids": {
+                            "tasks": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "title": {"type": "string"},
+                                        "notes": {"type": "string"},
+                                        "project": {"type": "string"},
+                                        "parent_id": {"type": "string"},
+                                        "tags": {"type": "array", "items": {"type": "string"}},
+                                        "time_estimate": {},
+                                        "due_day": {"type": "string"},
+                                        "due_datetime": {}
+                                    },
+                                    "required": ["title"]
+                                }
+                            }
+                        },
+                        "required": ["tasks"]
+                    }
+                ),
+                types.Tool(
+                    name="update_task",
+                    description="Update a task. add/remove_tags are additive; tags replaces all. Call explain('scheduling') for time/date syntax.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "task_id": {"type": "string"},
+                            "title": {"type": "string"},
+                            "notes": {"type": "string"},
+                            "project": {"type": "string", "description": "Project name or ID"},
+                            "is_done": {"type": "boolean"},
+                            "time_estimate": {"description": "'2h', '30m', or ms integer"},
+                            "time_spent": {"description": "'2h', '30m', or ms integer"},
+                            "due_day": {"type": "string", "description": "YYYY-MM-DD"},
+                            "due_datetime": {"description": "ISO string or ms timestamp"},
+                            "tags": {
                                 "type": "array",
                                 "items": {"type": "string"},
-                                "description": "Replace tag IDs (full list, not additive)"
+                                "description": "Replace all tags (names)"
+                            },
+                            "add_tags": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Add tags without replacing existing"
+                            },
+                            "remove_tags": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Remove specific tags by name"
                             }
                         },
                         "required": ["task_id"]
                     }
                 ),
                 types.Tool(
-                    name="complete_and_archive_task",
-                    description="Mark a task as done. True deletion is not supported.",
+                    name="complete_task",
+                    description="Mark a task done and archive it.",
                     inputSchema={
                         "type": "object",
-                        "properties": {
-                            "task_id": {"type": "string", "description": "Task ID to complete"}
-                        },
+                        "properties": {"task_id": {"type": "string"}},
                         "required": ["task_id"]
                     }
                 ),
                 types.Tool(
+                    name="convert_to_subtask",
+                    description="Move a task under a parent. Copies and re-creates — SP has no native reparent.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "task_id": {"type": "string", "description": "Task to move"},
+                            "parent_task_id": {"type": "string", "description": "New parent task ID"}
+                        },
+                        "required": ["task_id", "parent_task_id"]
+                    }
+                ),
+                types.Tool(
                     name="get_projects",
-                    description="Get all projects. Use this first to get project IDs for scoping get_tasks.",
+                    description="All projects with IDs and names.",
                     inputSchema={"type": "object", "properties": {}}
                 ),
                 types.Tool(
                     name="create_project",
-                    description="Create a new project",
+                    description="Create a project.",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "title": {"type": "string", "description": "Project title"},
-                            "description": {"type": "string", "description": "Project description"},
-                            "color": {"type": "string", "description": "Hex color code"}
+                            "title": {"type": "string"},
+                            "description": {"type": "string"},
+                            "color": {"type": "string", "description": "Hex color"}
                         },
                         "required": ["title"]
                     }
                 ),
                 types.Tool(
                     name="get_tags",
-                    description="Get all tags. Rarely needed — tag labels are already resolved inline in get_tasks results. Use this only if you need tag IDs for create_task or update_task.",
+                    description="All tags. Rarely needed — use tag names directly in create/update.",
                     inputSchema={"type": "object", "properties": {}}
                 ),
                 types.Tool(
                     name="create_tag",
-                    description="Create a new tag",
+                    description="Create a tag.",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "title": {"type": "string", "description": "Tag title"},
-                            "color": {"type": "string", "description": "Hex color code"}
+                            "title": {"type": "string"},
+                            "color": {"type": "string", "description": "Hex color"}
                         },
                         "required": ["title"]
                     }
                 ),
                 types.Tool(
                     name="show_notification",
-                    description="Show a notification in Super Productivity",
+                    description="Push a notification into Super Productivity.",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "message": {"type": "string", "description": "Notification message"},
+                            "message": {"type": "string"},
                             "type": {
                                 "type": "string",
                                 "enum": ["success", "info", "warning", "error"],
@@ -488,9 +517,9 @@ class SuperProductivityMCPServer:
                 ),
                 types.Tool(
                     name="debug_directories",
-                    description="Debug the IPC communication directories. Use if commands are timing out.",
+                    description="IPC directory status. Use if commands are timing out.",
                     inputSchema={"type": "object", "properties": {}}
-                )
+                ),
             ]
 
         @self.server.call_tool()
