@@ -21,52 +21,32 @@ https://github.com/user-attachments/assets/cc118173-023f-48cb-8213-427027e475af
 
 ## Installation
 
-### Automatic Setup
+### 1. Install the MCP server
 
-**Windows:**
-1. Clone this repo
-2. Run `setup.bat`
-3. Follow the prompts
+Add to your Claude Desktop config:
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
 
-**Linux/Mac UNTESTED:**
-1. Clone this repo
-2. Run `chmod +x setup.sh && ./setup.sh`
-3. Follow the prompts
+```json
+{
+  "mcpServers": {
+    "super-productivity": {
+      "command": "uvx",
+      "args": ["superproductivity-mcp"]
+    }
+  }
+}
+```
 
-The setup scripts will preserve any existing MCP servers in your Claude Desktop configuration.
+`uvx` fetches the latest version from PyPI automatically — no Python install or repo clone needed. Requires [uv](https://docs.astral.sh/uv/) to be installed (`brew install uv` on macOS).
 
-You'll still have to install the plugin.zip manually in Super Productivity in settings->plugins.
+### 2. Install the plugin
 
-Once that's done, restart claude (and Super Prod for good measure) and you should be able to access your files
+- Open Super Productivity → Settings → Plugins
+- Click "Upload Plugin"
+- Select the `plugin.zip` from the [latest GitHub release](https://github.com/Ben-Elliot/superproductivity-mcp/releases)
 
-### Manual Setup
-
-1. **Install Python dependencies:**
-   ```bash
-   pip install mcp
-   ```
-
-2. **Set up MCP server:**
-   Copy `mcp_server.py` to your data directory:
-   - Windows: `%APPDATA%\super-productivity-mcp\`
-   - Linux: `~/.local/share/super-productivity-mcp/`
-   - macOS: `~/Library/Application Support/super-productivity-mcp/`
-
-3. **Configure Claude Desktop:**
-   Edit Claude's config file and add to `mcpServers`:
-   ```json
-   "super-productivity": {
-     "command": "python3",
-     "args": ["/path/to/mcp_server.py"]
-   }
-   ```
-
-4. **Install the plugin:**
-   - Open Super Productivity → Settings → Plugins
-   - Click "Upload Plugin"
-   - Select `plugin.js`
-
-5. **Restart Claude Desktop**
+### 3. Restart Claude Desktop
 
 ## Usage
 
@@ -146,7 +126,7 @@ cp .mcp.json.example .mcp.json
 ### Running the Server
 
 ```bash
-uv run mcp_server.py
+uv run superproductivity-mcp
 ```
 
 Or let Claude Code pick it up automatically via `.mcp.json`.
@@ -154,14 +134,12 @@ Or let Claude Code pick it up automatically via `.mcp.json`.
 ### Repo Structure
 
 ```
-mcp_server.py       # MCP server (Python, run with uv)
-plugin/             # Super Productivity plugin files
-  plugin.js         # Main plugin JS (install via SP Settings → Plugins)
-  plugin.zip        # Pre-packaged zip for convenience
-  index.html        # Plugin UI
-  manifest.json     # Plugin manifest
-setup.sh / .bat     # One-shot setup scripts for end users
-merge_config.py     # Helper used by setup.bat to merge Claude Desktop config
+src/superproductivity_mcp/  # MCP server Python package (install via uvx)
+plugin/                     # Super Productivity plugin files
+  plugin.js                 # Main plugin JS (install via SP Settings → Plugins)
+  plugin.zip                # Pre-packaged zip for convenience
+  index.html                # Plugin UI
+  manifest.json             # Plugin manifest
 ```
 
 ## Troubleshooting
