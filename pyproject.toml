@@ -6,8 +6,18 @@ dependencies = [
     "mcp>=1.0.0",
 ]
 
+[project.scripts]
+superproductivity-mcp = "superproductivity_mcp.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/superproductivity_mcp"]
+
 [tool.uv]
-package = false
+package = true
 
 [dependency-groups]
 dev = [
