@@ -17,7 +17,7 @@ https://github.com/user-attachments/assets/cc118173-023f-48cb-8213-427027e475af
 
 - Super Productivity 14.0.0 or higher
 - Claude Desktop
-- Python 3.8 or higher
+- Python 3.10 or higher
 
 ## Installation
 
