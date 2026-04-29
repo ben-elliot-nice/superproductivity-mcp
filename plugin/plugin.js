@@ -498,6 +498,17 @@ class MCPBridgePlugin {
             const subtaskId = await PluginAPI.addTask({ ...rest, title: createTitle });
             const updatePayload = hasSyntax ? { parentId, title } : { parentId };
             await PluginAPI.updateTask(subtaskId, updatePayload);
+            // Also update parent's subTaskIds to maintain the bidirectional link.
+            // updateTask with parentId only sets the child's parentId — it does not
+            // add the child to the parent's subTaskIds array.
+            const allTasksForParent = await PluginAPI.getTasks();
+            const parentTask = allTasksForParent.find(t => t.id === parentId);
+            if (parentTask) {
+              const existing = parentTask.subTaskIds || [];
+              if (!existing.includes(subtaskId)) {
+                await PluginAPI.updateTask(parentId, { subTaskIds: [...existing, subtaskId] });
+              }
+            }
             result = subtaskId;
           } else {
             result = await PluginAPI.addTask(command.data);
