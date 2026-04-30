@@ -525,26 +525,38 @@ class MCPBridgePlugin {
           const allTasks = await PluginAPI.getTasks();
           const taskMap = new Map(allTasks.map(t => [t.id, t]));
           const fixes = [];
+          const errors = [];
+
+          // Build a map of parentId → [childIds that have parentId set but are missing from parent's subTaskIds]
+          // Root cause: concurrent create_tasks calls race on subTaskIds updates — last write wins,
+          // leaving orphaned children with parentId set but not in parent's subTaskIds array.
+          const missingFromParent = new Map(); // parentId → Set of childIds to add
           for (const task of allTasks) {
-            // Fix 1: child is in parent's subTaskIds but has no parentId set
-            for (const childId of (task.subTaskIds || [])) {
-              const child = taskMap.get(childId);
-              if (child && !child.parentId) {
-                await PluginAPI.updateTask(childId, { parentId: task.id });
-                fixes.push(`set parentId on "${child.title}" → parent "${task.title}"`);
-              }
-            }
-            // Fix 2: child has parentId set but is missing from parent's subTaskIds
             if (task.parentId) {
               const parent = taskMap.get(task.parentId);
               if (parent && !(parent.subTaskIds || []).includes(task.id)) {
-                const updated = [...(parent.subTaskIds || []), task.id];
-                await PluginAPI.updateTask(task.parentId, { subTaskIds: updated });
-                fixes.push(`added "${task.title}" to subTaskIds of parent "${parent.title}"`);
+                if (!missingFromParent.has(task.parentId)) {
+                  missingFromParent.set(task.parentId, new Set());
+                }
+                missingFromParent.get(task.parentId).add(task.id);
               }
             }
           }
-          result = { fixed: fixes.length, fixes };
+
+          // For each parent, do ONE update with ALL missing children at once to avoid race conditions
+          for (const [parentId, missingIds] of missingFromParent) {
+            const parent = taskMap.get(parentId);
+            try {
+              const updated = [...(parent.subTaskIds || []), ...missingIds];
+              await PluginAPI.updateTask(parentId, { subTaskIds: updated });
+              const childTitles = [...missingIds].map(id => taskMap.get(id)?.title || id);
+              fixes.push(`added ${missingIds.size} missing children to "${parent.title}": ${childTitles.join(', ')}`);
+            } catch (e) {
+              errors.push(`failed to fix parent "${parent?.title}": ${e.message}`);
+            }
+          }
+
+          result = { fixed: fixes.length, fixes, errors };
           break;
         }
 
