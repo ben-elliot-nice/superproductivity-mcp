@@ -1,0 +1,38 @@
+name: Build checks
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build plugin zip
+        run: bash build-plugin.sh
+
+      - name: Verify zip exists
+        run: |
+          VERSION=$(python3 -c "import json; print(json.load(open('plugin/manifest.json'))['version'])")
+          ZIP="plugin/plugin-v${VERSION}.zip"
+          test -f "$ZIP" && echo "OK: $ZIP" || (echo "ERROR: $ZIP not found" && exit 1)
+
+  build-mcp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Build MCP wheel
+        run: uv build
+
+      - name: Verify artifacts
+        run: |
+          ls dist/*.whl dist/*.tar.gz \
+            && echo "OK: MCP package built" \
+            || (echo "ERROR: dist artifacts missing" && exit 1)

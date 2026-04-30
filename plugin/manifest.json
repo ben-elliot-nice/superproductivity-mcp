@@ -2,21 +2,36 @@
   "id": "sp-mcp-bridge",
   "name": "MCP Bridge",
   "description": "Bridge between Super Productivity and MCP (Model Context Protocol) servers for Claude Desktop integration",
-  "version": "1.2.1",
+  "version": "1.2.4",
   "manifestVersion": 1,
   "author": "Super Productivity Team",
   "homepage": "https://github.com/johannesjo/super-productivity",
   "minSupVersion": "14.0.0",
-  "permissions": ["nodeExecution"],
+  "permissions": [
+    "nodeExecution"
+  ],
   "icon": "icon.svg",
-  "categories": ["integration", "automation"],
-  "tags": ["mcp", "claude", "ai", "integration"],
+  "categories": [
+    "integration",
+    "automation"
+  ],
+  "tags": [
+    "mcp",
+    "claude",
+    "ai",
+    "integration"
+  ],
   "iFrame": true,
   "isSkipMenuEntry": true,
-  "hooks": ["taskUpdate", "taskComplete", "taskDelete", "currentTaskChange"],
+  "hooks": [
+    "taskUpdate",
+    "taskComplete",
+    "taskDelete",
+    "currentTaskChange"
+  ],
   "changelog": {
-    "1.2.1": "Dashboard UI redesign — settings card with vertical form and directory listings, clear logs button in log card",
-    "1.2.0": "MCP API redesign — 16-tool surface, server-side tag/project resolution, human-readable time, due dates, batch create, completed task history, convert_to_subtask",
+    "1.2.1": "Dashboard UI redesign \u2014 settings card with vertical form and directory listings, clear logs button in log card",
+    "1.2.0": "MCP API redesign \u2014 16-tool surface, server-side tag/project resolution, human-readable time, due dates, batch create, completed task history, convert_to_subtask",
     "1.1.1": "Fix SP double-write bug when creating subtasks with parentId",
     "1.1.0": "Structured log levels, MCP call instrumentation, dashboard log delivery fix, log level selector UI",
     "1.0.0": "Initial release with full MCP bridge functionality"

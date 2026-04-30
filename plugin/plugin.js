@@ -485,19 +485,33 @@ class MCPBridgePlugin {
           
         case 'addTask':
           if (command.data.parentId) {
-            // SP's PluginAPI.addTask double-writes when parentId is supplied at creation time.
-            // Workaround: create without parentId first, then update to nest under parent.
-            // If the title contains SP scheduling/tag syntax (@, #, +), strip it for
-            // creation then restore via the same update so SP can parse it correctly.
+            // SP's parentId field on a child task creates a root-level cross-reference
+            // label, not true subtask nesting. True nesting is controlled exclusively by
+            // the parent's subTaskIds array.
+            // Strategy: create the task WITHOUT parentId (so it doesn't appear at root
+            // with a cross-reference label), then add its ID to the parent's subTaskIds.
+            // SP will then display it nested under the parent and exclude it from root view.
             const { parentId, title, ...rest } = command.data;
+            // Strip SP scheduling/tag syntax from title at creation if present, to prevent
+            // SP from parsing @project/#tag/+parent during addTask. Restore via update.
             const hasSyntax = /[@#+]/.test(title);
             const createTitle = hasSyntax
               ? title.replace(/@\w+/g, '').replace(/#\w+/g, '').replace(/\+\w+/g, '').trim()
               : title;
-            await this.log(`Creating subtask (parentId deferred to avoid SP double-write)`, 'debug');
+            await this.log(`Creating subtask under ${parentId} (parentId omitted to avoid root-level cross-reference)`, 'debug');
             const subtaskId = await PluginAPI.addTask({ ...rest, title: createTitle });
-            const updatePayload = hasSyntax ? { parentId, title } : { parentId };
-            await PluginAPI.updateTask(subtaskId, updatePayload);
+            if (hasSyntax) {
+              await PluginAPI.updateTask(subtaskId, { title });
+            }
+            // Add to parent's subTaskIds — this is what produces true nesting in SP.
+            const allTasks = await PluginAPI.getTasks();
+            const parentTask = allTasks.find(t => t.id === parentId);
+            if (parentTask) {
+              const existing = parentTask.subTaskIds || [];
+              if (!existing.includes(subtaskId)) {
+                await PluginAPI.updateTask(parentId, { subTaskIds: [...existing, subtaskId] });
+              }
+            }
             result = subtaskId;
           } else {
             result = await PluginAPI.addTask(command.data);

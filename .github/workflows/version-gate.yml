@@ -1,0 +1,85 @@
+name: Version gate
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  version-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check version consistency and bump
+        run: |
+          pip install packaging --quiet
+          python3 << 'PYEOF'
+          import json, re, sys, subprocess
+          from pathlib import Path
+          from packaging.version import Version
+
+          versions = {}
+
+          # pyproject.toml (required)
+          text = Path("pyproject.toml").read_text()
+          m = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE)
+          if not m:
+              print("ERROR: version not found in pyproject.toml")
+              sys.exit(1)
+          versions["pyproject.toml"] = m.group(1)
+
+          # src/superproductivity_mcp/__init__.py (present after packaging PR merges)
+          init_path = Path("src/superproductivity_mcp/__init__.py")
+          if init_path.exists():
+              m = re.search(r'^__version__\s*=\s*"([^"]+)"', init_path.read_text(), re.MULTILINE)
+              if m:
+                  versions["src/superproductivity_mcp/__init__.py"] = m.group(1)
+
+          # src/superproductivity_mcp/server.py (present after packaging PR merges)
+          server_path = Path("src/superproductivity_mcp/server.py")
+          if server_path.exists():
+              m = re.search(r'server_version="([^"]+)"', server_path.read_text())
+              if m:
+                  versions["src/superproductivity_mcp/server.py"] = m.group(1)
+
+          # plugin/manifest.json (required)
+          manifest = json.loads(Path("plugin/manifest.json").read_text())
+          versions["plugin/manifest.json"] = manifest["version"]
+
+          print("Versions found:")
+          for f, v in sorted(versions.items()):
+              print(f"  {f}: {v}")
+
+          # All found versions must match
+          unique = set(versions.values())
+          if len(unique) > 1:
+              print("\nERROR: Version mismatch across files!")
+              for f, v in sorted(versions.items()):
+                  print(f"  {f}: {v}")
+              sys.exit(1)
+
+          pr_version = list(unique)[0]
+          print(f"\nAll files consistent: v{pr_version}")
+
+          # Must be strictly greater than current main
+          result = subprocess.run(
+              ["git", "show", "origin/main:pyproject.toml"],
+              capture_output=True, text=True
+          )
+          m = re.search(r'^version\s*=\s*"([^"]+)"', result.stdout, re.MULTILINE)
+          if not m:
+              print("WARNING: could not read version from main — skipping bump check")
+              sys.exit(0)
+
+          main_version = m.group(1)
+          print(f"main: v{main_version}")
+
+          if Version(pr_version) <= Version(main_version):
+              print(f"\nERROR: v{pr_version} must be strictly greater than main (v{main_version}).")
+              print("Bump the version in pyproject.toml, __init__.py, server.py, and plugin/manifest.json.")
+              sys.exit(1)
+
+          print(f"\nVersion bump confirmed: {main_version} -> {pr_version}")
+          PYEOF
