@@ -185,7 +185,11 @@ def apply_task_filters(tasks: list, args: dict) -> list:
         tasks = [t for t in tasks if not t.get("isDone")]
 
     if not args.get("include_subtasks", False):
-        tasks = [t for t in tasks if not t.get("parentId")]
+        # Detect subtasks via parent's subTaskIds rather than child's parentId.
+        # SP does not set parentId on a child when we update the parent's subTaskIds,
+        # so parentId is not a reliable subtask indicator.
+        subtask_ids = {sid for t in tasks for sid in t.get("subTaskIds", [])}
+        tasks = [t for t in tasks if t["id"] not in subtask_ids]
 
     if args.get("search"):
         needle = args["search"].lower()
@@ -925,7 +929,8 @@ class SuperProductivityMCPServer:
             return {"success": False, "error": f"Source task {task_id} not found"}
         if not parent:
             return {"success": False, "error": f"Parent task {parent_task_id} not found"}
-        if source.get("parentId"):
+        all_subtask_ids = {sid for t in all_tasks for sid in t.get("subTaskIds", [])}
+        if task_id in all_subtask_ids:
             return {"success": False, "error": "Source task is already a subtask."}
 
         # Build subtask data — copy relevant fields, drop projectId (parent owns it)
@@ -1015,7 +1020,7 @@ class SuperProductivityMCPServer:
                 write_stream,
                 InitializationOptions(
                     server_name="super-productivity",
-                    server_version="1.2.3",
+                    server_version="1.2.4",
                     capabilities=self.server.get_capabilities(
                         notification_options=NotificationOptions(),
                         experimental_capabilities={},

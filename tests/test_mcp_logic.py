@@ -79,10 +79,11 @@ from mcp_server import apply_task_filters, today_str
 
 
 def _task(id="t1", title="Test", is_done=False, parent_id=None,
-          project_id=None, tag_ids=None, due_day=None):
+          project_id=None, tag_ids=None, due_day=None, sub_task_ids=None):
     return {"id": id, "title": title, "isDone": is_done,
             "parentId": parent_id, "projectId": project_id,
-            "tagIds": tag_ids or [], "dueDay": due_day}
+            "tagIds": tag_ids or [], "dueDay": due_day,
+            "subTaskIds": sub_task_ids or []}
 
 
 def test_filter_excludes_done_by_default():
@@ -94,7 +95,8 @@ def test_filter_include_done():
     assert len(apply_task_filters(tasks, {"include_done": True})) == 2
 
 def test_filter_excludes_subtasks_by_default():
-    tasks = [_task(id="a"), _task(id="b", parent_id="a")]
+    # Subtask detection uses parent's subTaskIds, not child's parentId.
+    tasks = [_task(id="a", sub_task_ids=["b"]), _task(id="b")]
     assert [t["id"] for t in apply_task_filters(tasks, {})] == ["a"]
 
 def test_filter_due_before():
