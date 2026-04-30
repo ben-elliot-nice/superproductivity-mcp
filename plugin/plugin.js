@@ -556,26 +556,25 @@ class MCPBridgePlugin {
             }
           }
 
-          // Step 2: Remove subtasks from project taskIds — tasks created without parentId
-          // get added to project.taskIds by SP; later setting parentId doesn't remove them,
-          // causing double-display (root AND nested). Fix: remove any task with parentId from
-          // its project's taskIds, grouped by project to avoid multiple updates per project.
+          // Step 2: Build authoritative set of all task IDs that are subtasks of anything.
+          // Use subTaskIds scan (not parentId) — more reliable since parentId may be stale/missing.
+          const knownSubtaskIds = new Set(
+            allTasks.flatMap(t => t.subTaskIds || [])
+          );
+
+          // Remove any task from project.taskIds that is a known subtask.
+          // Tasks created without parentId get added to project.taskIds by SP; later
+          // parentId/subTaskIds updates don't remove them, causing double-display.
           const projects = await PluginAPI.getAllProjects();
           for (const project of projects) {
-            const subtaskIdsInProject = (project.taskIds || []).filter(id => {
-              const t = taskMap.get(id);
-              return t && t.parentId;
-            });
-            if (subtaskIdsInProject.length > 0) {
+            const wronglyInProject = (project.taskIds || []).filter(id => knownSubtaskIds.has(id));
+            if (wronglyInProject.length > 0) {
               try {
-                const cleaned = (project.taskIds || []).filter(id => {
-                  const t = taskMap.get(id);
-                  return !t || !t.parentId;
-                });
+                const cleaned = (project.taskIds || []).filter(id => !knownSubtaskIds.has(id));
                 await PluginAPI.updateProject(project.id, { taskIds: cleaned });
-                fixes.push(`project taskIds: removed ${subtaskIdsInProject.length} subtasks from "${project.title}"`);
+                fixes.push(`project "${project.title}": removed ${wronglyInProject.length} subtasks from root list`);
               } catch (e) {
-                errors.push(`failed to fix taskIds for project "${project.title}": ${e.message}`);
+                errors.push(`failed to clean project "${project.title}": ${e.message}`);
               }
             }
           }
