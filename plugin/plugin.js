@@ -543,16 +543,40 @@ class MCPBridgePlugin {
             }
           }
 
-          // For each parent, do ONE update with ALL missing children at once to avoid race conditions
+          // Step 1: For each parent, add ALL missing children to subTaskIds in one update
           for (const [parentId, missingIds] of missingFromParent) {
             const parent = taskMap.get(parentId);
             try {
               const updated = [...(parent.subTaskIds || []), ...missingIds];
               await PluginAPI.updateTask(parentId, { subTaskIds: updated });
               const childTitles = [...missingIds].map(id => taskMap.get(id)?.title || id);
-              fixes.push(`added ${missingIds.size} missing children to "${parent.title}": ${childTitles.join(', ')}`);
+              fixes.push(`subTaskIds: added ${missingIds.size} children to "${parent.title}"`);
             } catch (e) {
-              errors.push(`failed to fix parent "${parent?.title}": ${e.message}`);
+              errors.push(`failed to fix subTaskIds for "${taskMap.get(parentId)?.title}": ${e.message}`);
+            }
+          }
+
+          // Step 2: Remove subtasks from project taskIds — tasks created without parentId
+          // get added to project.taskIds by SP; later setting parentId doesn't remove them,
+          // causing double-display (root AND nested). Fix: remove any task with parentId from
+          // its project's taskIds, grouped by project to avoid multiple updates per project.
+          const projects = await PluginAPI.getAllProjects();
+          for (const project of projects) {
+            const subtaskIdsInProject = (project.taskIds || []).filter(id => {
+              const t = taskMap.get(id);
+              return t && t.parentId;
+            });
+            if (subtaskIdsInProject.length > 0) {
+              try {
+                const cleaned = (project.taskIds || []).filter(id => {
+                  const t = taskMap.get(id);
+                  return !t || !t.parentId;
+                });
+                await PluginAPI.updateProject(project.id, { taskIds: cleaned });
+                fixes.push(`project taskIds: removed ${subtaskIdsInProject.length} subtasks from "${project.title}"`);
+              } catch (e) {
+                errors.push(`failed to fix taskIds for project "${project.title}": ${e.message}`);
+              }
             }
           }
 
