@@ -1,0 +1,42 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Skip pre-release tags
+        id: check
+        run: |
+          pip install packaging --quiet
+          python3 << 'PYEOF'
+          import os, sys
+          from packaging.version import Version
+          tag = os.environ["GITHUB_REF_NAME"].lstrip("v")
+          v = Version(tag)
+          is_pre = "true" if v.is_prerelease else "false"
+          print(f"Tag: {tag}  pre-release: {is_pre}")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"skip={is_pre}\n")
+          PYEOF
+
+      - uses: astral-sh/setup-uv@v5
+        if: steps.check.outputs.skip == 'false'
+        with:
+          enable-cache: true
+
+      - name: Build package
+        if: steps.check.outputs.skip == 'false'
+        run: uv build
+
+      - name: Publish to PyPI
+        if: steps.check.outputs.skip == 'false'
+        run: uv publish
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.UV_PUBLISH_TOKEN }}
