@@ -1,29 +1,25 @@
-# SP-MCP
+# superproductivity-mcp
 
-Bridge between the amazing [Super Productivity](https://github.com/johannesjo/super-productivity/) app and MCP (Model Context Protocol) servers for Claude Desktop integration.
+Bridge between [Super Productivity](https://github.com/johannesjo/super-productivity/) and Claude Desktop via the Model Context Protocol (MCP). Lets Claude create, update, and query tasks, projects, and tags directly in Super Productivity.
 
-This MCP and plugin allows Claude Desktop to directly interact with Super Productivity through the MCP protocol. Create update,tasks, manage projects and tags, and get information from Super Productivity.
+> **Backup your Super Productivity data before use.**
 
-Make sure to backup your Super Productivity before using in case of data loss. I've provided a plugin.zip for convenience but feel free to make your own from the files.
-
-(Can't delete tasks right now (but it can mark them as done))
-
-## Demo
-
-https://github.com/user-attachments/assets/cc118173-023f-48cb-8213-427027e475af
-
+---
 
 ## Requirements
 
 - Super Productivity 14.0.0 or higher
 - Claude Desktop
-- Python 3.10 or higher
+- [uv](https://docs.astral.sh/uv/) (`brew install uv` on macOS)
+
+---
 
 ## Installation
 
 ### 1. Install the MCP server
 
 Add to your Claude Desktop config:
+
 - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
 
@@ -38,117 +34,171 @@ Add to your Claude Desktop config:
 }
 ```
 
-`uvx` fetches the latest version from PyPI automatically — no Python install or repo clone needed. Requires [uv](https://docs.astral.sh/uv/) to be installed (`brew install uv` on macOS).
+`uvx` fetches the latest version from PyPI automatically — no Python install or repo clone required.
 
 ### 2. Install the plugin
 
-- Open Super Productivity → Settings → Plugins
-- Click "Upload Plugin"
-- Select the `plugin.zip` from the [latest GitHub release](https://github.com/Ben-Elliot/superproductivity-mcp/releases)
+Download `superproductivity-mcp-plugin-v<version>.zip` from the [latest release](https://github.com/ben-elliot-nice/superproductivity-mcp/releases/latest), then in Super Productivity:
+
+**Settings → Plugins → Upload Plugin**
+
+The plugin dashboard includes a **Claude Desktop** card with a copy-pastable config snippet pinned to your installed plugin version.
 
 ### 3. Restart Claude Desktop
 
+---
+
 ## Usage
 
-### Creating Tasks
+### Tasks
+
 ```
-"Create a task to review the quarterly budget #finance +work"
+Create a task to review the quarterly budget #finance
+Show me all my open tasks
+Mark the budget review task as complete
+Update the task 'Meeting prep' with notes about the agenda
 ```
 
-### Task Management
+### Subtasks
+
 ```
-"Show me all my tasks"
-"Mark the budget review task as complete"
-"Update the task 'Meeting prep' with notes about the agenda"
+Create subtasks under 'Website Redesign': design mockups, build frontend, write tests
 ```
 
-### Project and Tag Management
+### Projects & Tags
+
 ```
-"Create a new project called 'Website Redesign'"
-"Show me all projects"
-"Get all tags"
+Create a new project called 'Website Redesign'
+Show me all tasks in the Infrastructure project
+Get all tags
 ```
 
-## Dashboard
+### Scheduling
 
-Access the SP-MCP dashboard from the menu. The dashboard shows:
-- Real-time statistics
-- Connection status
-- Activity logs
-- Settings (polling frequency: default 2 seconds)
+```
+Create a task 'Send invoice' due tomorrow with a 30 minute estimate
+Show me everything due this week
+```
+
+---
+
+## Tools
+
+| Tool | Description |
+|------|-------------|
+| `get_tasks` | Fetch tasks — filter by project, tag, date, search, today |
+| `create_task` | Create a task with optional project, tags, subtask nesting, due date, time estimate |
+| `create_tasks` | Batch create multiple tasks in one round trip |
+| `update_task` | Update title, notes, tags, time, due date, done state |
+| `complete_task` | Mark a task done |
+| `get_subtasks` | Get subtasks of a parent task by partial name |
+| `get_tasks_by_tag` | Filter tasks by partial tag name |
+| `get_completed_tasks` | Completed tasks, optionally filtered by recency |
+| `convert_to_subtask` | Move a task under a parent |
+| `get_projects` | List all projects |
+| `create_project` | Create a project |
+| `get_tags` | List all tags |
+| `create_tag` | Create a tag |
+| `show_notification` | Show a notification in Super Productivity |
+| `debug_directories` | Show MCP data directory paths |
+| `explain` | Get usage hints for tools, filters, or scheduling syntax |
+
+---
 
 ## Communication
 
-The plugin uses file-based communication through:
-- Windows: `%APPDATA%\super-productivity-mcp\`
-- Linux: `~/.local/share/super-productivity-mcp/`
-- macOS: `~/Library/Application Support/super-productivity-mcp/`
+The plugin uses file-based IPC. Commands and responses are exchanged through:
 
-Commands are exchanged through `plugin_commands/` and `plugin_responses/` directories.
+| Platform | Path |
+|----------|------|
+| macOS / Linux | `~/.local/share/super-productivity-mcp/` |
+| Windows | `%APPDATA%\super-productivity-mcp\` |
+
+---
+
+## Pinning to a plugin version
+
+The plugin dashboard shows a copy-pastable config with the exact version pinned:
+
+```json
+{
+  "mcpServers": {
+    "super-productivity": {
+      "command": "uvx",
+      "args": ["superproductivity-mcp==1.3.0"]
+    }
+  }
+}
+```
+
+This ensures the MCP server version matches your installed plugin exactly.
+
+---
 
 ## Contributing
 
-Pull requests are welcome. Please open an issue first if you're planning a significant change.
+Pull requests welcome. Open an issue first for significant changes.
 
-### Local Environment
+### Local setup
 
-This project uses [mise](https://mise.jdx.dev/) to manage the Python runtime. Install it first:
-
-```bash
-brew install mise
-```
-
-Then from the repo root, let mise install the correct Python version:
+Requires [mise](https://mise.jdx.dev/) and [uv](https://docs.astral.sh/uv/):
 
 ```bash
-mise install
+brew install mise uv
+mise install       # installs Python runtime
+uv sync            # installs dependencies into .venv
 ```
 
-Dependencies are managed with [uv](https://docs.astral.sh/uv/). Install it, then sync the project:
-
-```bash
-brew install uv
-uv sync
-```
-
-This creates a `.venv` and installs all dependencies from `uv.lock`.
-
-### MCP Config
-
-Copy `.mcp.json.example` to `.mcp.json` and update the paths to point to your local clone:
+Copy `.mcp.json.example` to `.mcp.json` and update the path:
 
 ```bash
 cp .mcp.json.example .mcp.json
 ```
 
-`.mcp.json` is gitignored — it contains machine-specific absolute paths and should not be committed.
-
-### Running the Server
+### Running locally
 
 ```bash
 uv run superproductivity-mcp
 ```
 
-Or let Claude Code pick it up automatically via `.mcp.json`.
+Or let Claude Code pick it up via `.mcp.json`.
 
-### Repo Structure
+### Running tests
+
+```bash
+uv run pytest
+```
+
+### Repo structure
 
 ```
-src/superproductivity_mcp/  # MCP server Python package (install via uvx)
-plugin/                     # Super Productivity plugin files
-  plugin.js                 # Main plugin JS (install via SP Settings → Plugins)
-  plugin.zip                # Pre-packaged zip for convenience
-  index.html                # Plugin UI
-  manifest.json             # Plugin manifest
+src/superproductivity_mcp/   # MCP server Python package
+  server.py                  # All tool logic
+  __init__.py                # Version
+  __main__.py                # Entry point for python -m
+plugin/                      # Super Productivity plugin
+  plugin.js                  # Plugin logic
+  index.html                 # Dashboard UI
+  manifest.json              # Plugin manifest
+build-plugin.sh              # Builds the plugin zip (injects version into UI)
 ```
+
+### Branching
+
+- `main` — stable releases, protected (PR + CI gates required)
+- `dev` — integration branch, direct push allowed
+
+Pre-releases publish to PyPI automatically on `[publish]` commits or pre-release tags from `dev`.
+
+---
 
 ## Troubleshooting
 
-### Plugin Not Loading
-- Check Super Productivity version (14.0.0+ required)
-- Verify plugin permissions include `nodeExecution`
+**Plugin not loading**
+- Super Productivity 14.0.0+ required
+- Plugin permissions must include `nodeExecution`
 
-### Commands Not Working
-- Verify both plugin and MCP server are running
-- Check file permissions on communication directories
+**Commands not working**
+- Verify both the plugin and MCP server are running
 - Check `mcp_server.log` in the data directory
+- Check the plugin dashboard for connection status and activity logs
