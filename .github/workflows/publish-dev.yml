@@ -67,7 +67,7 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           TAG="v${VERSION}"
-          ZIP="plugin/plugin-v${VERSION}.zip"
+          ZIP="plugin/superproductivity-mcp-plugin-v${VERSION}.zip"
 
           if gh release view "$TAG" &>/dev/null; then
             echo "Release $TAG already exists — updating asset"

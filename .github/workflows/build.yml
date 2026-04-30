@@ -16,7 +16,7 @@ jobs:
       - name: Verify zip exists
         run: |
           VERSION=$(python3 -c "import json; print(json.load(open('plugin/manifest.json'))['version'])")
-          ZIP="plugin/plugin-v${VERSION}.zip"
+          ZIP="plugin/superproductivity-mcp-plugin-v${VERSION}.zip"
           test -f "$ZIP" && echo "OK: $ZIP" || (echo "ERROR: $ZIP not found" && exit 1)
 
   build-mcp:

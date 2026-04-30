@@ -27,8 +27,8 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: plugin-v${{ steps.version.outputs.version }}
-          path: plugin/plugin-v${{ steps.version.outputs.version }}.zip
+          name: superproductivity-mcp-plugin-v${{ steps.version.outputs.version }}
+          path: plugin/superproductivity-mcp-plugin-v${{ steps.version.outputs.version }}.zip
           retention-days: 90
 
       - name: Publish GitHub Release
@@ -36,7 +36,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${{ steps.version.outputs.tag }}"
-          ZIP="plugin/plugin-v${{ steps.version.outputs.version }}.zip"
+          ZIP="plugin/superproductivity-mcp-plugin-v${{ steps.version.outputs.version }}.zip"
 
           if gh release view "$TAG" &>/dev/null; then
             echo "Release $TAG already exists — updating asset"
