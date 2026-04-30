@@ -485,32 +485,20 @@ class MCPBridgePlugin {
           
         case 'addTask':
           if (command.data.parentId) {
-            // SP's addTask double-writes when parentId is supplied at creation time.
-            // Strategy: create WITHOUT parentId, then set parentId via updateTask (hides
-            // child from root), then add to parent's subTaskIds (produces nested display).
             const { parentId, title, ...rest } = command.data;
-            // Strip SP scheduling/tag syntax from title at creation if present, to prevent
-            // SP from parsing @project/#tag/+parent during addTask. Restore via update.
+            // Strip SP scheduling/tag syntax (@, #, +) from title at creation to prevent
+            // SP parsing it during addTask. Restore via a separate updateTask on title only.
             const hasSyntax = /[@#+]/.test(title);
             const createTitle = hasSyntax
               ? title.replace(/@\w+/g, '').replace(/#\w+/g, '').replace(/\+\w+/g, '').trim()
               : title;
-            // Create without parentId to avoid SP's addTask double-write bug.
             await this.log(`Creating subtask under ${parentId}`, 'debug');
-            const subtaskId = await PluginAPI.addTask({ ...rest, title: createTitle });
-            // Step 1: restore title syntax if stripped, and set parentId via updateTask.
-            // Setting parentId via updateTask (not addTask) avoids the double-write bug
-            // while still hiding the child from SP's root list.
-            const updatePayload = hasSyntax ? { parentId, title } : { parentId };
-            await PluginAPI.updateTask(subtaskId, updatePayload);
-            // Step 2: add child to parent's subTaskIds so SP nests it correctly.
-            const allTasks = await PluginAPI.getTasks();
-            const parentTask = allTasks.find(t => t.id === parentId);
-            if (parentTask) {
-              const existing = parentTask.subTaskIds || [];
-              if (!existing.includes(subtaskId)) {
-                await PluginAPI.updateTask(parentId, { subTaskIds: [...existing, subtaskId] });
-              }
+            // Pass parentId to addTask directly — SP creates a true subtask at creation
+            // time and handles hierarchy correctly. updateTask({ parentId }) creates a
+            // root-level cross-reference label instead of a true nested subtask.
+            const subtaskId = await PluginAPI.addTask({ ...rest, title: createTitle, parentId });
+            if (hasSyntax) {
+              await PluginAPI.updateTask(subtaskId, { title });
             }
             result = subtaskId;
           } else {
