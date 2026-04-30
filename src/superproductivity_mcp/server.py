@@ -1020,7 +1020,7 @@ class SuperProductivityMCPServer:
                 write_stream,
                 InitializationOptions(
                     server_name="super-productivity",
-                    server_version="1.2.6",
+                    server_version="1.3.0",
                     capabilities=self.server.get_capabilities(
                         notification_options=NotificationOptions(),
                         experimental_capabilities={},
