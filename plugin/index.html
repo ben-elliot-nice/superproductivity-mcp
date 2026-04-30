@@ -52,6 +52,7 @@
         .grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
+            grid-template-rows: auto auto;
             gap: 1rem;
             margin-bottom: 1rem;
         }
@@ -62,6 +63,14 @@
             padding: 1rem;
             box-shadow: 0 2px 4px rgba(0,0,0,0.3);
         }
+
+        /* Settings spans both rows in right column */
+        .card-settings {
+            grid-column: 2;
+            grid-row: 1 / 3;
+        }
+
+        .full-width { grid-column: 1 / -1; }
 
         .card-header {
             display: flex;
@@ -87,8 +96,6 @@
 
         .stat-label { font-weight: 500; }
         .stat-value { color: #b0b0b0; }
-
-        .full-width { grid-column: 1 / -1; }
 
         /* Settings form — vertical layout */
         .form-group {
@@ -158,6 +165,53 @@
             margin-top: 0.25rem;
         }
 
+        /* MCP Install card */
+        .install-hint {
+            font-size: 0.8125rem;
+            color: #b0b0b0;
+            margin-bottom: 0.75rem;
+        }
+
+        .install-code {
+            background: #141414;
+            border: 1px solid #404040;
+            border-radius: 4px;
+            padding: 0.75rem;
+            font-family: 'Courier New', monospace;
+            font-size: 0.8125rem;
+            color: #a8e6cf;
+            white-space: pre;
+            overflow-x: auto;
+            margin-bottom: 0.75rem;
+            line-height: 1.6;
+        }
+
+        .install-copy-row {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .copy-feedback {
+            font-size: 0.8125rem;
+            color: #4CAF50;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .copy-feedback.visible { opacity: 1; }
+
+        .install-path-hint {
+            margin-top: 0.75rem;
+            font-size: 0.75rem;
+            color: #616161;
+        }
+
+        .install-path-hint code {
+            color: #888;
+            font-family: 'Courier New', monospace;
+        }
+
         /* Logs */
         .logs-container {
             background: #141414;
@@ -192,6 +246,7 @@
 
         @media (max-width: 768px) {
             .grid { grid-template-columns: 1fr; }
+            .card-settings { grid-column: 1; grid-row: auto; }
         }
     </style>
 </head>
@@ -204,7 +259,7 @@
     <div class="container">
         <div class="grid">
 
-            <!-- Statistics Card -->
+            <!-- Statistics Card (left col, row 1) -->
             <div class="card">
                 <div class="card-header">
                     <h3>📊 Statistics</h3>
@@ -231,8 +286,8 @@
                 </div>
             </div>
 
-            <!-- Settings Card -->
-            <div class="card">
+            <!-- Settings Card (right col, spans both rows) -->
+            <div class="card card-settings">
                 <div class="card-header">
                     <h3>⚙️ Settings</h3>
                 </div>
@@ -272,7 +327,31 @@
                 <button class="btn btn-primary btn-update" onclick="updatePollingFrequency()">Update Settings</button>
             </div>
 
-            <!-- Activity Logs -->
+            <!-- MCP Install Card (left col, row 2) -->
+            <div class="card">
+                <div class="card-header">
+                    <h3>🔌 Claude Desktop</h3>
+                </div>
+                <p class="install-hint">Add to your Claude Desktop config to use this plugin version:</p>
+                <div class="install-code" id="installSnippet">{
+  "mcpServers": {
+    "super-productivity": {
+      "command": "uvx",
+      "args": ["superproductivity-mcp==__PLUGIN_VERSION__"]
+    }
+  }
+}</div>
+                <div class="install-copy-row">
+                    <button class="btn btn-primary btn-sm" onclick="copyInstall()">Copy</button>
+                    <span class="copy-feedback" id="copyFeedback">Copied!</span>
+                </div>
+                <p class="install-path-hint">
+                    macOS: <code>~/Library/Application Support/Claude/claude_desktop_config.json</code><br>
+                    Windows: <code>%APPDATA%\Claude\claude_desktop_config.json</code>
+                </p>
+            </div>
+
+            <!-- Activity Logs (full width) -->
             <div class="card full-width">
                 <div class="card-header">
                     <h3>📝 Activity Logs</h3>
@@ -369,10 +448,10 @@
             const uptime = Math.floor((Date.now() - bridgeStatus.stats.startTime) / 1000);
             document.getElementById('uptime').textContent = formatUptime(uptime);
 
-            document.getElementById('mcpPath').textContent     = bridgeStatus.mcpPath     || '—';
-            document.getElementById('commandsDir').textContent = bridgeStatus.commandsDir || '—';
+            document.getElementById('mcpPath').textContent      = bridgeStatus.mcpPath     || '—';
+            document.getElementById('commandsDir').textContent  = bridgeStatus.commandsDir || '—';
             document.getElementById('responsesDir').textContent = bridgeStatus.responsesDir || '—';
-            document.getElementById('pollingFrequency').value  = bridgeStatus.pollingFrequency;
+            document.getElementById('pollingFrequency').value   = bridgeStatus.pollingFrequency;
         }
 
         function formatUptime(seconds) {
@@ -382,6 +461,15 @@
             if (h > 0) return `${h}h ${m}m ${s}s`;
             if (m > 0) return `${m}m ${s}s`;
             return `${s}s`;
+        }
+
+        function copyInstall() {
+            const text = document.getElementById('installSnippet').textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                const fb = document.getElementById('copyFeedback');
+                fb.classList.add('visible');
+                setTimeout(() => fb.classList.remove('visible'), 2000);
+            });
         }
 
         function addLogEntry(message, level = 'info', timestamp = null) {
@@ -463,12 +551,12 @@
                 if (status) {
                     syncLogBuffer(status.logBuffer);
                     updateBridgeStatus({
-                        status:     { type: status.isInitialized ? 'connected' : 'disconnected' },
-                        mcpPath:    status.mcpServerPath,
-                        commandDir: status.commandDir,
+                        status:      { type: status.isInitialized ? 'connected' : 'disconnected' },
+                        mcpPath:     status.mcpServerPath,
+                        commandDir:  status.commandDir,
                         responseDir: status.responseDir,
-                        stats:      status.stats,
-                        config:     status.config
+                        stats:       status.stats,
+                        config:      status.config
                     });
                 }
             }
