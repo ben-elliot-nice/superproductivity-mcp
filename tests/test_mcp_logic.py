@@ -1,9 +1,9 @@
 # tests/test_mcp_logic.py
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from mcp_server import parse_duration, today_str
+from superproductivity_mcp.server import parse_duration, today_str
+from superproductivity_mcp.server import parse_due_day, parse_due_datetime
+from superproductivity_mcp.server import merge_tag_ids
+from superproductivity_mcp.server import apply_task_filters
+from superproductivity_mcp.server import filter_completed_since
 
 
 def test_parse_duration_ms_passthrough():
@@ -33,9 +33,6 @@ def test_today_str_format():
     assert len(parts) == 3 and len(parts[0]) == 4
 
 
-from mcp_server import parse_due_day, parse_due_datetime
-
-
 def test_parse_due_day_passthrough():
     assert parse_due_day("2026-04-25") == "2026-04-25"
 
@@ -51,9 +48,6 @@ def test_parse_due_datetime_iso():
 
 def test_parse_due_datetime_none():
     assert parse_due_datetime(None) is None
-
-
-from mcp_server import merge_tag_ids
 
 
 def test_merge_add():
@@ -73,9 +67,6 @@ def test_merge_remove_nonexistent():
 
 def test_merge_empty():
     assert merge_tag_ids([], add=[], remove=[]) == []
-
-
-from mcp_server import apply_task_filters, today_str
 
 
 def _task(id="t1", title="Test", is_done=False, parent_id=None,
@@ -121,8 +112,6 @@ def test_filter_search():
     tasks = [_task(id="a", title="Buy milk"), _task(id="b", title="Do taxes")]
     assert [t["id"] for t in apply_task_filters(tasks, {"search": "milk"})] == ["a"]
 
-
-from mcp_server import filter_completed_since
 
 _NOW = 1714003200000  # fixed ms reference point
 

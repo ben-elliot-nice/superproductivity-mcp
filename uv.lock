@@ -754,8 +754,8 @@ wheels = [
 
 [[package]]
 name = "superproductivity-mcp"
-version = "1.2.1"
-source = { virtual = "." }
+version = "1.2.4"
+source = { editable = "." }
 dependencies = [
     { name = "mcp" },
 ]

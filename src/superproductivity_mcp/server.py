@@ -1020,7 +1020,7 @@ class SuperProductivityMCPServer:
                 write_stream,
                 InitializationOptions(
                     server_name="super-productivity",
-                    server_version="1.2.4",
+                    server_version="1.2.5",
                     capabilities=self.server.get_capabilities(
                         notification_options=NotificationOptions(),
                         experimental_capabilities={},
@@ -1029,10 +1029,14 @@ class SuperProductivityMCPServer:
             )
 
 
-async def main():
+async def _main():
     server = SuperProductivityMCPServer()
     await server.run()
 
 
+def main():
+    asyncio.run(_main())
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
