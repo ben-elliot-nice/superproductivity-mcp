@@ -484,33 +484,21 @@ class MCPBridgePlugin {
           break;
           
         case 'addTask':
-          if (command.data.parentId) {
-            // SP's PluginAPI.addTask double-writes when parentId is supplied at creation time.
-            // Workaround: create without parentId first, then update to nest under parent.
-            // If the title contains SP scheduling/tag syntax (@, #, +), strip it for
-            // creation then restore via the same update so SP can parse it correctly.
-            const { parentId, title, ...rest } = command.data;
-            const hasSyntax = /[@#+]/.test(title);
-            const createTitle = hasSyntax
-              ? title.replace(/@\w+/g, '').replace(/#\w+/g, '').replace(/\+\w+/g, '').trim()
-              : title;
-            await this.log(`Creating subtask (parentId deferred to avoid SP double-write)`, 'debug');
+          if (command.data.parentId && /[@#+]/.test(command.data.title)) {
+            // Subtask whose title contains SP scheduling/tag syntax (@, #, +).
+            // Strip syntax for creation so SP doesn't parse it as tags/project,
+            // then restore the original title via a separate update.
+            // parentId is always included at creation so SP correctly nests the
+            // task under the parent (not in the root task list).
+            const { title, ...rest } = command.data;
+            const createTitle = title.replace(/@\w+/g, '').replace(/#\w+/g, '').replace(/\+\w+/g, '').trim();
+            await this.log(`Creating subtask with syntax (title deferred): ${createTitle}`, 'debug');
             const subtaskId = await PluginAPI.addTask({ ...rest, title: createTitle });
-            const updatePayload = hasSyntax ? { parentId, title } : { parentId };
-            await PluginAPI.updateTask(subtaskId, updatePayload);
-            // Also update parent's subTaskIds to maintain the bidirectional link.
-            // updateTask with parentId only sets the child's parentId — it does not
-            // add the child to the parent's subTaskIds array.
-            const allTasksForParent = await PluginAPI.getTasks();
-            const parentTask = allTasksForParent.find(t => t.id === parentId);
-            if (parentTask) {
-              const existing = parentTask.subTaskIds || [];
-              if (!existing.includes(subtaskId)) {
-                await PluginAPI.updateTask(parentId, { subTaskIds: [...existing, subtaskId] });
-              }
-            }
+            await PluginAPI.updateTask(subtaskId, { title });
             result = subtaskId;
           } else {
+            // Regular task or subtask (no SP syntax in title).
+            // Pass parentId directly to addTask — SP handles hierarchy at creation time.
             result = await PluginAPI.addTask(command.data);
           }
           break;
