@@ -1,29 +1,42 @@
 name: Publish to PyPI
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_run:
+    workflows: ["Build and release plugin"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # Run if triggered manually or if the release workflow succeeded
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     steps:
       - uses: actions/checkout@v4
 
-      - name: Skip pre-release tags
+      - name: Check version is stable release
         id: check
         run: |
           pip install packaging --quiet
           python3 << 'PYEOF'
-          import os, sys
+          import re, sys
+          from pathlib import Path
           from packaging.version import Version
-          tag = os.environ["GITHUB_REF_NAME"].lstrip("v")
-          v = Version(tag)
+
+          text = Path("pyproject.toml").read_text()
+          m = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE)
+          if not m:
+              print("ERROR: version not found in pyproject.toml")
+              sys.exit(1)
+
+          version = m.group(1)
+          v = Version(version)
           is_pre = "true" if v.is_prerelease else "false"
-          print(f"Tag: {tag}  pre-release: {is_pre}")
-          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+          print(f"Version: {version}  pre-release: {is_pre}")
+          with open(__import__("os").environ["GITHUB_OUTPUT"], "a") as f:
               f.write(f"skip={is_pre}\n")
+              f.write(f"version={version}\n")
           PYEOF
 
       - uses: astral-sh/setup-uv@v5

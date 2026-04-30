@@ -418,6 +418,11 @@ class SuperProductivityMCPServer:
                     }
                 ),
                 types.Tool(
+                    name="fix_subtask_links",
+                    description="Scan all tasks for broken parent-child links and repair them. Fixes tasks missing parentId or missing from parent's subTaskIds.",
+                    inputSchema={"type": "object", "properties": {}}
+                ),
+                types.Tool(
                     name="convert_to_subtask",
                     description="Move a task under a parent. Copies and re-creates — SP has no native reparent.",
                     inputSchema={
@@ -518,6 +523,8 @@ class SuperProductivityMCPServer:
                     result = await self.update_task(arguments)
                 elif name == "complete_task":
                     result = await self.complete_task(arguments)
+                elif name == "fix_subtask_links":
+                    result = await self.fix_subtask_links(arguments)
                 elif name == "convert_to_subtask":
                     result = await self.convert_to_subtask(arguments)
                 elif name == "get_projects":
@@ -902,6 +909,9 @@ class SuperProductivityMCPServer:
             return {"success": False, "error": "task_id is required"}
         return await self.send_command("setTaskDone", taskId=task_id)
 
+    async def fix_subtask_links(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        return await self.send_command("fixSubtaskLinks")
+
     async def convert_to_subtask(self, args: Dict[str, Any]) -> Dict[str, Any]:
         """Copy a top-level task as a subtask of parent_task_id, then archive the original.
 
@@ -1020,7 +1030,7 @@ class SuperProductivityMCPServer:
                 write_stream,
                 InitializationOptions(
                     server_name="super-productivity",
-                    server_version="1.2.5",
+                    server_version="1.2.6",
                     capabilities=self.server.get_capabilities(
                         notification_options=NotificationOptions(),
                         experimental_capabilities={},

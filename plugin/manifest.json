@@ -2,7 +2,7 @@
   "id": "sp-mcp-bridge",
   "name": "MCP Bridge",
   "description": "Bridge between Super Productivity and MCP (Model Context Protocol) servers for Claude Desktop integration",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "manifestVersion": 1,
   "author": "Super Productivity Team",
   "homepage": "https://github.com/johannesjo/super-productivity",
@@ -34,6 +34,7 @@
     "1.2.0": "MCP API redesign \u2014 16-tool surface, server-side tag/project resolution, human-readable time, due dates, batch create, completed task history, convert_to_subtask",
     "1.1.1": "Fix SP double-write bug when creating subtasks with parentId",
     "1.1.0": "Structured log levels, MCP call instrumentation, dashboard log delivery fix, log level selector UI",
-    "1.0.0": "Initial release with full MCP bridge functionality"
+    "1.0.0": "Initial release with full MCP bridge functionality",
+    "1.2.6": "Fix subtask nesting (set parentId + subTaskIds), add fix_subtask_links repair tool"
   }
 }

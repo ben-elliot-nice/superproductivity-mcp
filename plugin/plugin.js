@@ -485,12 +485,9 @@ class MCPBridgePlugin {
           
         case 'addTask':
           if (command.data.parentId) {
-            // SP's parentId field on a child task creates a root-level cross-reference
-            // label, not true subtask nesting. True nesting is controlled exclusively by
-            // the parent's subTaskIds array.
-            // Strategy: create the task WITHOUT parentId (so it doesn't appear at root
-            // with a cross-reference label), then add its ID to the parent's subTaskIds.
-            // SP will then display it nested under the parent and exclude it from root view.
+            // SP's addTask double-writes when parentId is supplied at creation time.
+            // Strategy: create WITHOUT parentId, then set parentId via updateTask (hides
+            // child from root), then add to parent's subTaskIds (produces nested display).
             const { parentId, title, ...rest } = command.data;
             // Strip SP scheduling/tag syntax from title at creation if present, to prevent
             // SP from parsing @project/#tag/+parent during addTask. Restore via update.
@@ -498,12 +495,15 @@ class MCPBridgePlugin {
             const createTitle = hasSyntax
               ? title.replace(/@\w+/g, '').replace(/#\w+/g, '').replace(/\+\w+/g, '').trim()
               : title;
-            await this.log(`Creating subtask under ${parentId} (parentId omitted to avoid root-level cross-reference)`, 'debug');
+            // Create without parentId to avoid SP's addTask double-write bug.
+            await this.log(`Creating subtask under ${parentId}`, 'debug');
             const subtaskId = await PluginAPI.addTask({ ...rest, title: createTitle });
-            if (hasSyntax) {
-              await PluginAPI.updateTask(subtaskId, { title });
-            }
-            // Add to parent's subTaskIds — this is what produces true nesting in SP.
+            // Step 1: restore title syntax if stripped, and set parentId via updateTask.
+            // Setting parentId via updateTask (not addTask) avoids the double-write bug
+            // while still hiding the child from SP's root list.
+            const updatePayload = hasSyntax ? { parentId, title } : { parentId };
+            await PluginAPI.updateTask(subtaskId, updatePayload);
+            // Step 2: add child to parent's subTaskIds so SP nests it correctly.
             const allTasks = await PluginAPI.getTasks();
             const parentTask = allTasks.find(t => t.id === parentId);
             if (parentTask) {
@@ -532,6 +532,33 @@ class MCPBridgePlugin {
             suggestion: 'Use updateTask with {isDone: true} to complete the task'
           };
           break;
+
+        case 'fixSubtaskLinks': {
+          const allTasks = await PluginAPI.getTasks();
+          const taskMap = new Map(allTasks.map(t => [t.id, t]));
+          const fixes = [];
+          for (const task of allTasks) {
+            // Fix 1: child is in parent's subTaskIds but has no parentId set
+            for (const childId of (task.subTaskIds || [])) {
+              const child = taskMap.get(childId);
+              if (child && !child.parentId) {
+                await PluginAPI.updateTask(childId, { parentId: task.id });
+                fixes.push(`set parentId on "${child.title}" → parent "${task.title}"`);
+              }
+            }
+            // Fix 2: child has parentId set but is missing from parent's subTaskIds
+            if (task.parentId) {
+              const parent = taskMap.get(task.parentId);
+              if (parent && !(parent.subTaskIds || []).includes(task.id)) {
+                const updated = [...(parent.subTaskIds || []), task.id];
+                await PluginAPI.updateTask(task.parentId, { subTaskIds: updated });
+                fixes.push(`added "${task.title}" to subTaskIds of parent "${parent.title}"`);
+              }
+            }
+          }
+          result = { fixed: fixes.length, fixes };
+          break;
+        }
 
         case 'setTaskDone':
         case 'markTaskDone':
