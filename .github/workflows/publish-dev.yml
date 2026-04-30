@@ -42,16 +42,13 @@ jobs:
           echo "Pre-release version: ${VERSION}"
 
       - name: Patch pyproject.toml and manifest versions
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          sed -i "s/^version = \".*\"/version = \"${{ steps.version.outputs.version }}\"/" pyproject.toml
-          python3 -c "
-          import json
-          with open('plugin/manifest.json') as f: d = json.load(f)
-          d['version'] = '${{ steps.version.outputs.version }}'
-          with open('plugin/manifest.json', 'w') as f: json.dump(d, f, indent=2)
-          "
+          sed -i "s/^version = \".*\"/version = \"${VERSION}\"/" pyproject.toml
+          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" plugin/manifest.json
           echo "pyproject.toml: $(grep '^version' pyproject.toml)"
-          echo "manifest: $(python3 -c \"import json; print(json.load(open('plugin/manifest.json'))['version'])\")"
+          echo "manifest version: $(python3 -c 'import json; print(json.load(open("plugin/manifest.json"))["version"])')"
 
       - name: Build plugin zip
         run: bash build-plugin.sh
