@@ -2,7 +2,7 @@
   "id": "sp-mcp-bridge",
   "name": "MCP Bridge",
   "description": "Bridge between Super Productivity and MCP (Model Context Protocol) servers for Claude Desktop integration",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "manifestVersion": 1,
   "author": "Super Productivity Team",
   "homepage": "https://github.com/johannesjo/super-productivity",
