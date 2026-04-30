@@ -521,68 +521,6 @@ class MCPBridgePlugin {
           };
           break;
 
-        case 'fixSubtaskLinks': {
-          const allTasks = await PluginAPI.getTasks();
-          const taskMap = new Map(allTasks.map(t => [t.id, t]));
-          const fixes = [];
-          const errors = [];
-
-          // Build a map of parentId → [childIds that have parentId set but are missing from parent's subTaskIds]
-          // Root cause: concurrent create_tasks calls race on subTaskIds updates — last write wins,
-          // leaving orphaned children with parentId set but not in parent's subTaskIds array.
-          const missingFromParent = new Map(); // parentId → Set of childIds to add
-          for (const task of allTasks) {
-            if (task.parentId) {
-              const parent = taskMap.get(task.parentId);
-              if (parent && !(parent.subTaskIds || []).includes(task.id)) {
-                if (!missingFromParent.has(task.parentId)) {
-                  missingFromParent.set(task.parentId, new Set());
-                }
-                missingFromParent.get(task.parentId).add(task.id);
-              }
-            }
-          }
-
-          // Step 1: For each parent, add ALL missing children to subTaskIds in one update
-          for (const [parentId, missingIds] of missingFromParent) {
-            const parent = taskMap.get(parentId);
-            try {
-              const updated = [...(parent.subTaskIds || []), ...missingIds];
-              await PluginAPI.updateTask(parentId, { subTaskIds: updated });
-              const childTitles = [...missingIds].map(id => taskMap.get(id)?.title || id);
-              fixes.push(`subTaskIds: added ${missingIds.size} children to "${parent.title}"`);
-            } catch (e) {
-              errors.push(`failed to fix subTaskIds for "${taskMap.get(parentId)?.title}": ${e.message}`);
-            }
-          }
-
-          // Step 2: Build authoritative set of all task IDs that are subtasks of anything.
-          // Use subTaskIds scan (not parentId) — more reliable since parentId may be stale/missing.
-          const knownSubtaskIds = new Set(
-            allTasks.flatMap(t => t.subTaskIds || [])
-          );
-
-          // Remove any task from project.taskIds that is a known subtask.
-          // Tasks created without parentId get added to project.taskIds by SP; later
-          // parentId/subTaskIds updates don't remove them, causing double-display.
-          const projects = await PluginAPI.getAllProjects();
-          for (const project of projects) {
-            const wronglyInProject = (project.taskIds || []).filter(id => knownSubtaskIds.has(id));
-            if (wronglyInProject.length > 0) {
-              try {
-                const cleaned = (project.taskIds || []).filter(id => !knownSubtaskIds.has(id));
-                await PluginAPI.updateProject(project.id, { taskIds: cleaned });
-                fixes.push(`project "${project.title}": removed ${wronglyInProject.length} subtasks from root list`);
-              } catch (e) {
-                errors.push(`failed to clean project "${project.title}": ${e.message}`);
-              }
-            }
-          }
-
-          result = { fixed: fixes.length, fixes, errors };
-          break;
-        }
-
         case 'setTaskDone':
         case 'markTaskDone':
         case 'completeTask':
