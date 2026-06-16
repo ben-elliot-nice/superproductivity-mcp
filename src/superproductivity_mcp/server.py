@@ -2,13 +2,11 @@
 # MCP Server for Super Productivity Integration
 
 import asyncio
-import json
 import logging
 import os
 import re
 import sys
 import time as _time
-import uuid
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
@@ -17,6 +15,8 @@ import mcp.server.stdio
 import mcp.types as types
 from mcp.server import NotificationOptions, Server
 from mcp.server.models import InitializationOptions
+
+from superproductivity_mcp.bridge import PluginBridge
 
 
 EXPLAIN_TOPICS = {
@@ -222,29 +222,19 @@ def filter_completed_since(tasks: list, since_days: int, now_ms: int = None) -> 
 class SuperProductivityMCPServer:
     def __init__(self):
         self.server = Server("super-productivity")
-        self._tag_cache: Dict[str, str] = {}  # id -> title
-        self.setup_directories()
+        self._tag_cache: Dict[str, str] = {}
+        self._bridge = PluginBridge()
         self.setup_logging()
         self.setup_tools()
 
-    def setup_directories(self):
-        if os.name == 'nt':  # Windows
-            data_dir = os.environ.get('APPDATA', os.path.expanduser('~/AppData/Roaming'))
-        else:  # Linux/Mac
-            data_dir = os.environ.get('XDG_DATA_HOME', os.path.expanduser('~/.local/share'))
-
-        self.base_dir = Path(data_dir) / 'super-productivity-mcp'
-        self.command_dir = self.base_dir / 'plugin_commands'
-        self.response_dir = self.base_dir / 'plugin_responses'
-
-        self.base_dir.mkdir(parents=True, exist_ok=True)
-        self.command_dir.mkdir(parents=True, exist_ok=True)
-        self.response_dir.mkdir(parents=True, exist_ok=True)
-
-        logging.info(f"MCP Server using directory: {self.base_dir}")
-
     def setup_logging(self):
-        log_file = self.base_dir / 'mcp_server.log'
+        if os.name == 'nt':
+            data_dir = os.environ.get('APPDATA', os.path.expanduser('~/AppData/Roaming'))
+        else:
+            data_dir = os.environ.get('XDG_DATA_HOME', os.path.expanduser('~/.local/share'))
+        log_dir = Path(data_dir) / 'super-productivity-mcp'
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / 'mcp_server.log'
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s',
@@ -542,37 +532,8 @@ class SuperProductivityMCPServer:
                 return [types.TextContent(type="text", text=f"Error: {str(e)}")]
 
     async def send_command(self, action: str, **kwargs) -> Dict[str, Any]:
-        """Send a command to Super Productivity plugin"""
-        command = {
-            "action": action,
-            "id": f"{action}_{uuid.uuid4().hex}",
-            "timestamp": asyncio.get_running_loop().time(),
-            **kwargs
-        }
-
-        command_file = self.command_dir / f"{command['id']}.json"
-        with open(command_file, 'w') as f:
-            json.dump(command, f, indent=2)
-
-        logging.info(f"Sent command: {action} -> {command_file}")
-
-        response_file = self.response_dir / f"{command['id']}_response.json"
-
-        for _ in range(30):
-            if response_file.exists():
-                try:
-                    with open(response_file, 'r') as f:
-                        response = json.load(f)
-                    response_file.unlink()
-                    logging.info(f"Received response for {action}: {response.get('success', 'unknown')}")
-                    return response
-                except Exception as e:
-                    logging.error(f"Error reading response file: {e}")
-                    break
-            await asyncio.sleep(1)
-
-        logging.warning(f"Timeout waiting for response to {action}")
-        return {"success": False, "error": "Timeout waiting for response"}
+        logging.info("Sending command: %s", action)
+        return await self._bridge.send_command(action, **kwargs)
 
     async def _ensure_tag_cache(self):
         """Populate tag cache if empty."""
@@ -1001,26 +962,26 @@ class SuperProductivityMCPServer:
     async def debug_directories(self, args: Dict[str, Any]) -> Dict[str, Any]:
         return {
             "success": True,
-            "base_directory": str(self.base_dir),
-            "command_directory": str(self.command_dir),
-            "response_directory": str(self.response_dir),
-            "directories_exist": {
-                "base": self.base_dir.exists(),
-                "commands": self.command_dir.exists(),
-                "responses": self.response_dir.exists()
-            },
-            "tag_cache_size": len(self._tag_cache)
+            "transport": "http",
+            "bridge_port": self._bridge.port,
+            "bridge_url": f"http://localhost:{self._bridge.port}",
+            "pending_commands": len(self._bridge._pending),
+            "queued_commands": len(self._bridge._queue),
+            "tag_cache_size": len(self._tag_cache),
         }
 
     async def run(self):
         logging.info("Starting Super Productivity MCP Server...")
+        loop = asyncio.get_running_loop()
+        self._bridge.start(loop)
+        logging.info("PluginBridge ready on port %d", self._bridge.port)
         async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
             await self.server.run(
                 read_stream,
                 write_stream,
                 InitializationOptions(
                     server_name="super-productivity",
-                    server_version="1.3.0",
+                    server_version="2.0.0",
                     capabilities=self.server.get_capabilities(
                         notification_options=NotificationOptions(),
                         experimental_capabilities={},
