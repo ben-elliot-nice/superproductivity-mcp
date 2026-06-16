@@ -2,7 +2,7 @@
   "id": "sp-mcp-bridge",
   "name": "MCP Bridge",
   "description": "Bridge between Super Productivity and MCP (Model Context Protocol) servers for Claude Desktop integration",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "manifestVersion": 1,
   "author": "Super Productivity Team",
   "homepage": "https://github.com/johannesjo/super-productivity",
@@ -28,6 +28,7 @@
     "currentTaskChange"
   ],
   "changelog": {
+    "2.1.0": "Singleton bridge daemon — multiple Claude sessions share one SP plugin connection via superproductivity-mcp-bridge",
     "2.0.0": "Rewrite plugin IPC from file-based (nodeExecution) to HTTP fetch — works as uploaded plugin, auto port selection 27833–27840",
     "1.3.0": "Subtask nesting fix, MCP install card, plugin artifact rename, httpx pin",
     "1.2.6": "Fix subtask nesting (set parentId + subTaskIds), add fix_subtask_links repair tool",
