@@ -1,6 +1,6 @@
 [project]
 name = "superproductivity-mcp"
-version = "2.0.0"
+version = "2.1.0"
 description = "Super Productivity MCP server for Claude Desktop integration"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -10,6 +10,7 @@ dependencies = [
 
 [project.scripts]
 superproductivity-mcp = "superproductivity_mcp.server:main"
+superproductivity-mcp-bridge = "superproductivity_mcp.daemon:main"
 
 [project.urls]
 Homepage = "https://github.com/ben-elliot-nice/superproductivity-mcp"

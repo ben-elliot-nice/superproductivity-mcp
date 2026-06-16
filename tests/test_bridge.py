@@ -2,23 +2,25 @@
 import asyncio
 import json
 import socket
+import threading
+import time
 import urllib.request
-from superproductivity_mcp.bridge import PluginBridge, PORT_RANGE_START, PORT_RANGE_END
+from superproductivity_mcp.bridge import PluginBridgeClient, DAEMON_URL
+from superproductivity_mcp.daemon import BridgeDaemon
 
 
 def _free_port() -> int:
-    """Return an ephemeral free port for test isolation."""
     with socket.socket() as s:
         s.bind(("localhost", 0))
         return s.getsockname()[1]
 
 
 def _get(port: int, path: str) -> dict:
-    with urllib.request.urlopen(f"http://localhost:{port}{path}") as r:
+    with urllib.request.urlopen(f"http://localhost:{port}{path}", timeout=5) as r:
         return json.loads(r.read())
 
 
-def _post(port: int, path: str, body: dict) -> dict:
+def _post(port: int, path: str, body: dict, timeout: float = 5.0) -> dict:
     data = json.dumps(body).encode()
     req = urllib.request.Request(
         f"http://localhost:{port}{path}",
@@ -26,133 +28,110 @@ def _post(port: int, path: str, body: dict) -> dict:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req) as r:
+    with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read())
 
 
-def test_status():
+def test_daemon_url_constant():
+    assert DAEMON_URL == "http://localhost:27833"
+
+
+def test_client_registers_with_daemon():
     port = _free_port()
-    loop = asyncio.new_event_loop()
-    bridge = PluginBridge(port=port)
-    bridge.start(loop)
+    d = BridgeDaemon(port=port)
+    d.start()
     try:
-        result = _get(port, "/status")
-        assert result["status"] == "ok"
-        assert result["port"] == port
+        client = PluginBridgeClient(daemon_url=f"http://localhost:{port}")
+        client.start()
+        assert client.session_id is not None
+        assert len(client.session_id) > 10
+        assert _get(port, "/status")["active_sessions"] == 1
+        client.stop()
+        assert client.session_id is None
+        assert _get(port, "/status")["active_sessions"] == 0
     finally:
-        bridge.stop()
-        loop.close()
+        d.stop()
 
 
-def test_commands_empty():
+def test_client_send_command_round_trip():
     port = _free_port()
-    loop = asyncio.new_event_loop()
-    bridge = PluginBridge(port=port)
-    bridge.start(loop)
-    try:
-        assert _get(port, "/commands") == []
-    finally:
-        bridge.stop()
-        loop.close()
-
-
-def test_commands_enqueue_and_drain():
-    port = _free_port()
-    loop = asyncio.new_event_loop()
-    bridge = PluginBridge(port=port)
-    bridge.start(loop)
-    try:
-        with bridge._lock:
-            bridge._queue.append({"id": "test_123", "action": "getTasks"})
-        cmds = _get(port, "/commands")
-        assert len(cmds) == 1
-        assert cmds[0]["action"] == "getTasks"
-        assert _get(port, "/commands") == []  # second GET sees empty queue
-    finally:
-        bridge.stop()
-        loop.close()
-
-
-def test_response_resolves_future():
-    """Full round-trip: send_command → GET /commands → POST /response → future resolves."""
-    results = {}
+    d = BridgeDaemon(port=port)
+    d.start()
 
     async def _run():
-        port = _free_port()
-        bridge = PluginBridge(port=port)
-        bridge.start(asyncio.get_running_loop())
-        try:
-            task = asyncio.create_task(bridge.send_command("getTasks"))
-            await asyncio.sleep(0.1)
+        client = PluginBridgeClient(daemon_url=f"http://localhost:{port}")
+        client.start()
 
-            cmds = _get(port, "/commands")
-            assert len(cmds) == 1
-            cmd_id = cmds[0]["id"]
+        def simulate_plugin():
+            cmds = []
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline:
+                cmds = json.loads(
+                    urllib.request.urlopen(f"http://localhost:{port}/commands", timeout=5).read()
+                )
+                if cmds:
+                    break
+                time.sleep(0.01)
+            if cmds:
+                cmd_id = cmds[0]["id"]
+                data = json.dumps({"success": True, "result": [{"id": "task1"}]}).encode()
+                req = urllib.request.Request(
+                    f"http://localhost:{port}/response/{cmd_id}",
+                    data=data,
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                urllib.request.urlopen(req, timeout=5)
 
-            _post(port, f"/response/{cmd_id}", {"success": True, "result": [{"id": "t1"}]})
+        t = threading.Thread(target=simulate_plugin)
+        t.start()
 
-            result = await asyncio.wait_for(task, timeout=2.0)
-            results["result"] = result
-        finally:
-            bridge.stop()
+        result = await client.send_command("getTasks", timeout=3.0)
+        t.join(timeout=3)
+        client.stop()
+        return result
 
-    asyncio.run(_run())
-    assert results["result"]["success"] is True
-    assert results["result"]["result"][0]["id"] == "t1"
-
-
-def test_send_command_timeout():
-    async def _run():
-        port = _free_port()
-        bridge = PluginBridge(port=port)
-        bridge.start(asyncio.get_running_loop())
-        try:
-            result = await bridge.send_command("getTasks", timeout=0.1)
-            assert result["success"] is False
-            assert "Timeout" in result["error"]
-        finally:
-            bridge.stop()
-
-    asyncio.run(_run())
+    result = asyncio.run(_run())
+    d.stop()
+    assert result["success"] is True
+    assert result["result"][0]["id"] == "task1"
 
 
-def test_config_get_and_post():
+def test_client_send_command_daemon_timeout():
     port = _free_port()
-    loop = asyncio.new_event_loop()
-    bridge = PluginBridge(port=port)
-    bridge.start(loop)
-    try:
-        cfg = _get(port, "/config")
-        assert cfg["commandCheckIntervalMs"] == 2000
+    d = BridgeDaemon(port=port)
+    d.start()
 
-        _post(port, "/config", {"commandCheckIntervalMs": 5000})
-        assert _get(port, "/config")["commandCheckIntervalMs"] == 5000
-    finally:
-        bridge.stop()
-        loop.close()
+    async def _run():
+        client = PluginBridgeClient(daemon_url=f"http://localhost:{port}")
+        client.start()
+        # _timeout=0.2 so test is fast; no plugin responds
+        result = await client.send_command("getTasks", timeout=0.2)
+        client.stop()
+        return result
 
-
-def test_port_range_constants_are_sane():
-    assert PORT_RANGE_START < PORT_RANGE_END
-    assert PORT_RANGE_END - PORT_RANGE_START >= 7  # at least 8 candidates
+    result = asyncio.run(_run())
+    d.stop()
+    assert result["success"] is False
+    assert "Timeout" in result["error"]
 
 
-def test_auto_port_selection_skips_occupied_port():
-    """PluginBridge(port=None) should skip a port already in use."""
-    # Occupy the first port in the range
-    blocker = socket.socket()
-    blocker.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
-    blocker.bind(("localhost", PORT_RANGE_START))
-    blocker.listen(1)
+def test_two_clients_one_daemon():
+    """Two PluginBridgeClient instances share one daemon — each gets its own session."""
+    port = _free_port()
+    d = BridgeDaemon(port=port)
+    d.start()
 
-    loop = asyncio.new_event_loop()
-    bridge = PluginBridge()  # auto-select
-    bridge.start(loop)
-    try:
-        assert bridge.port != PORT_RANGE_START
-        result = _get(bridge.port, "/status")
-        assert result["status"] == "ok"
-    finally:
-        bridge.stop()
-        loop.close()
-        blocker.close()
+    async def _run():
+        c1 = PluginBridgeClient(daemon_url=f"http://localhost:{port}")
+        c2 = PluginBridgeClient(daemon_url=f"http://localhost:{port}")
+        c1.start()
+        c2.start()
+        assert c1.session_id != c2.session_id
+        assert _get(port, "/status")["active_sessions"] == 2
+        c1.stop()
+        c2.stop()
+        assert _get(port, "/status")["active_sessions"] == 0
+
+    asyncio.run(_run())
+    d.stop()

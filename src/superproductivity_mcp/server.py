@@ -16,7 +16,7 @@ import mcp.types as types
 from mcp.server import NotificationOptions, Server
 from mcp.server.models import InitializationOptions
 
-from superproductivity_mcp.bridge import PluginBridge
+from superproductivity_mcp.bridge import PluginBridgeClient
 
 
 EXPLAIN_TOPICS = {
@@ -223,7 +223,7 @@ class SuperProductivityMCPServer:
     def __init__(self):
         self.server = Server("super-productivity")
         self._tag_cache: Dict[str, str] = {}
-        self._bridge = PluginBridge()
+        self._bridge = PluginBridgeClient()
         self.setup_logging()
         self.setup_tools()
 
@@ -472,7 +472,7 @@ class SuperProductivityMCPServer:
                 ),
                 types.Tool(
                     name="debug_directories",
-                    description="HTTP bridge status — port, queue depth, pending commands. Use if commands are timing out.",
+                    description="Daemon bridge status — URL, session ID, tag cache size. Use if commands are timing out.",
                     inputSchema={"type": "object", "properties": {}}
                 ),
             ]
@@ -960,24 +960,18 @@ class SuperProductivityMCPServer:
         )
 
     async def debug_directories(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        with self._bridge._lock:
-            pending = len(self._bridge._pending)
-            queued = len(self._bridge._queue)
         return {
             "success": True,
-            "transport": "http",
-            "bridge_port": self._bridge.port,
-            "bridge_url": f"http://localhost:{self._bridge.port}" if self._bridge.port else None,
-            "pending_commands": pending,
-            "queued_commands": queued,
+            "transport": "http-daemon",
+            "daemon_url": self._bridge.daemon_url,
+            "session_id": self._bridge.session_id,
             "tag_cache_size": len(self._tag_cache),
         }
 
     async def run(self):
         logging.info("Starting Super Productivity MCP Server...")
-        loop = asyncio.get_running_loop()
-        self._bridge.start(loop)
-        logging.info("PluginBridge ready on port %d", self._bridge.port)
+        self._bridge.start()
+        logging.info("PluginBridgeClient registered with daemon, session=%s", self._bridge.session_id)
         try:
             async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
                 await self.server.run(
@@ -985,7 +979,7 @@ class SuperProductivityMCPServer:
                     write_stream,
                     InitializationOptions(
                         server_name="super-productivity",
-                        server_version="2.0.0",
+                        server_version="2.1.0",
                         capabilities=self.server.get_capabilities(
                             notification_options=NotificationOptions(),
                             experimental_capabilities={},
