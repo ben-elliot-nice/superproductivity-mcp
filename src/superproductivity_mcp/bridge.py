@@ -94,6 +94,9 @@ class _BridgeHandler(BaseHTTPRequestHandler):
             with self._bridge._lock:
                 self._bridge._config.update(data)
             self._send_json(200, {"ok": True})
+        elif self.path == "/events":
+            self._read_body()  # consume body
+            self._send_json(200, {"ok": True})
         else:
             self._send_json(404, {"error": "not found"})
 

@@ -472,7 +472,7 @@ class SuperProductivityMCPServer:
                 ),
                 types.Tool(
                     name="debug_directories",
-                    description="IPC directory status. Use if commands are timing out.",
+                    description="HTTP bridge status — port, queue depth, pending commands. Use if commands are timing out.",
                     inputSchema={"type": "object", "properties": {}}
                 ),
             ]
@@ -956,7 +956,7 @@ class SuperProductivityMCPServer:
         return await self.send_command(
             "showSnack",
             message=args.get("message", ""),
-            type=args.get("type", "info").upper()
+            snackType=args.get("type", "info").upper()
         )
 
     async def debug_directories(self, args: Dict[str, Any]) -> Dict[str, Any]:
