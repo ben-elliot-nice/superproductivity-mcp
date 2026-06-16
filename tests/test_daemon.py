@@ -93,7 +93,13 @@ def test_command_round_trip():
 
         t = threading.Thread(target=submit)
         t.start()
-        time.sleep(0.1)  # let command enqueue
+        deadline = time.monotonic() + 3.0
+        while time.monotonic() < deadline:
+            if _get(port, "/status")["queued_commands"] >= 1:
+                break
+            time.sleep(0.01)
+        else:
+            raise AssertionError("Command never appeared in queue within 3s")
 
         cmds = _get(port, "/commands")
         assert len(cmds) == 1
@@ -128,7 +134,13 @@ def test_two_sessions_route_independently():
         t2 = threading.Thread(target=submit, args=(sess2, "s2"))
         t1.start()
         t2.start()
-        time.sleep(0.1)
+        deadline = time.monotonic() + 3.0
+        while time.monotonic() < deadline:
+            if _get(port, "/status")["queued_commands"] >= 2:
+                break
+            time.sleep(0.01)
+        else:
+            raise AssertionError("Both commands never appeared in queue within 3s")
 
         cmds = _get(port, "/commands")
         assert len(cmds) == 2

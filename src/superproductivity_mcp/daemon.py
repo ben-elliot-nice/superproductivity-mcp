@@ -126,6 +126,9 @@ class _DaemonHandler(BaseHTTPRequestHandler):
                 if entry is not None:
                     entry[2] = body
             if entry is not None:
+                # event.set() is intentionally called outside the lock:
+                # the waiting thread may wake and pop the routing entry immediately,
+                # but entry[2] is already written and the local reference remains valid.
                 entry[1].set()
                 self._send_json(200, {"ok": True})
             else:
@@ -198,6 +201,9 @@ class BridgeDaemon:
         logging.info("BridgeDaemon started on port %d (pid %d)", self.port, os.getpid())
 
     def stop(self) -> None:
+        with self._lock:
+            for entry in self._routing.values():
+                entry[1].set()  # wake all waiting handlers so they exit promptly
         if self._server:
             self._server.shutdown()
         if self._thread:
