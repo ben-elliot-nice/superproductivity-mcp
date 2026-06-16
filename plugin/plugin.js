@@ -30,12 +30,14 @@ class MCPBridgePlugin {
   // ── HTTP helpers ─────────────────────────────────────────────────────────
 
   async _get(path) {
+    if (!this.bridgeUrl) throw new Error('Bridge not connected');
     const res = await fetch(`${this.bridgeUrl}${path}`);
     if (!res.ok) throw new Error(`GET ${path} → ${res.status}`);
     return res.json();
   }
 
   async _post(path, body) {
+    if (!this.bridgeUrl) throw new Error('Bridge not connected');
     const res = await fetch(`${this.bridgeUrl}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -378,4 +380,4 @@ if (typeof plugin !== 'undefined' && typeof plugin.onUnload === 'function') {
   });
 }
 
-window.mcpBridge = mcpBridge;
+if (typeof window !== 'undefined') window.mcpBridge = mcpBridge;
