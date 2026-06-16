@@ -1,169 +1,104 @@
 import asyncio
 import json
 import logging
-import socket
-import threading
-import uuid
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import subprocess
+import time
+import urllib.error
+import urllib.request
 from typing import Any, Dict, Optional
 
-PORT_RANGE_START = 27833
-PORT_RANGE_END   = 27841  # exclusive — 8 candidates: 27833–27840
+DAEMON_URL = "http://localhost:27833"
+_SPAWN_TIMEOUT = 3.0
+_SPAWN_POLL = 0.1
 
 
-def _find_free_port(start: int, end: int) -> int:
-    """Return the first bindable port in [start, end). Raises OSError if none free."""
-    for port in range(start, end):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            try:
-                s.bind(("localhost", port))
-                return port
-            except OSError:
-                continue
-    raise OSError(f"No free port found in range {start}–{end - 1}")
+def _http_get(url: str, timeout: float = 5.0) -> dict:
+    with urllib.request.urlopen(url, timeout=timeout) as r:
+        return json.loads(r.read())
 
 
-def _resolve_future(future: asyncio.Future, value: Any) -> None:
-    if not future.done():
-        future.set_result(value)
+def _http_post(url: str, body: dict, timeout: float = 5.0) -> dict:
+    data = json.dumps(body).encode()
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read())
 
 
-class _BridgeHandler(BaseHTTPRequestHandler):
-    def __init__(self, *args, bridge: "PluginBridge", **kwargs):
-        # Must be set before super().__init__() — BaseHTTPRequestHandler calls handle() during init
-        self._bridge = bridge
-        super().__init__(*args, **kwargs)
-
-    def _send_json(self, status: int, data: Any) -> None:
-        body = json.dumps(data).encode()
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def _read_body(self) -> bytes:
-        length = int(self.headers.get("Content-Length", 0))
-        return self.rfile.read(length)
-
-    def do_OPTIONS(self):
-        self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.end_headers()
-
-    def do_GET(self):
-        if self.path == "/status":
-            self._send_json(200, {"status": "ok", "port": self._bridge.port})
-        elif self.path == "/commands":
-            with self._bridge._lock:
-                cmds = list(self._bridge._queue)
-                self._bridge._queue.clear()
-            self._send_json(200, cmds)
-        elif self.path == "/config":
-            with self._bridge._lock:
-                cfg = dict(self._bridge._config)
-            self._send_json(200, cfg)
-        else:
-            self._send_json(404, {"error": "not found"})
-
-    def do_POST(self):
-        if self.path.startswith("/response/"):
-            cmd_id = self.path[len("/response/"):]
-            try:
-                body = json.loads(self._read_body())
-            except (json.JSONDecodeError, ValueError):
-                self._send_json(400, {"error": "invalid json"})
-                return
-            with self._bridge._lock:
-                future = self._bridge._pending.pop(cmd_id, None)
-            if future is not None:
-                self._bridge._loop.call_soon_threadsafe(_resolve_future, future, body)
-                self._send_json(200, {"ok": True})
-            else:
-                self._send_json(404, {"error": f"unknown command id: {cmd_id}"})
-        elif self.path == "/config":
-            try:
-                data = json.loads(self._read_body())
-            except (json.JSONDecodeError, ValueError):
-                self._send_json(400, {"error": "invalid json"})
-                return
-            with self._bridge._lock:
-                self._bridge._config.update(data)
-            self._send_json(200, {"ok": True})
-        elif self.path == "/events":
-            self._read_body()  # consume body
-            self._send_json(200, {"ok": True})
-        else:
-            self._send_json(404, {"error": "not found"})
-
-    def log_message(self, fmt, *args):
-        pass  # silence default access log
+def _http_delete(url: str) -> None:
+    req = urllib.request.Request(url, method="DELETE")
+    try:
+        urllib.request.urlopen(req, timeout=5.0)
+    except Exception:
+        pass
 
 
-class PluginBridge:
-    """HTTP bridge between the asyncio MCP server and the SP plugin renderer.
+class PluginBridgeClient:
+    """HTTP client connecting to the singleton BridgeDaemon.
 
-    Pass port=None (default) to auto-select the first free port in
-    PORT_RANGE_START–PORT_RANGE_END. Pass an explicit int for tests.
-    The actual bound port is available as bridge.port after start().
+    Multiple instances (one per MCP server process) can coexist.
+    Each registers a unique session_id with the daemon on start().
+    Auto-spawns the daemon via 'superproductivity-mcp-bridge' if not running.
     """
 
-    def __init__(self, port: Optional[int] = None):
-        self._requested_port = port
-        self.port: Optional[int] = port  # set to actual bound port in start()
-        self._lock = threading.Lock()
-        self._queue: list = []
-        self._pending: Dict[str, asyncio.Future] = {}
-        self._config: Dict[str, Any] = {
-            "commandCheckIntervalMs": 2000,
-            "logLevel": "info",
-        }
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._server: Optional[HTTPServer] = None
-        self._thread: Optional[threading.Thread] = None
+    def __init__(self, daemon_url: str = DAEMON_URL):
+        self.daemon_url = daemon_url
+        self.port: int = 27833  # informational
+        self.session_id: Optional[str] = None
 
-    def start(self, loop: asyncio.AbstractEventLoop) -> None:
-        self._loop = loop
-
-        if self._requested_port is not None:
-            self.port = self._requested_port
-        else:
-            self.port = _find_free_port(PORT_RANGE_START, PORT_RANGE_END)
-
-        def make_handler(*args, **kwargs):
-            return _BridgeHandler(*args, bridge=self, **kwargs)
-
-        self._server = HTTPServer(("localhost", self.port), make_handler)
-        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
-        self._thread.start()
-        logging.info("PluginBridge HTTP server started on port %d", self.port)
+    def start(self) -> None:
+        self._ensure_daemon()
+        r = _http_post(f"{self.daemon_url}/session/register", {})
+        self.session_id = r["session_id"]
+        logging.info("Registered with bridge daemon, session=%s", self.session_id)
 
     def stop(self) -> None:
-        if self._server:
-            self._server.shutdown()
-        if self._thread:
-            self._thread.join(timeout=2.0)
+        if self.session_id:
+            _http_delete(f"{self.daemon_url}/session/{self.session_id}")
+            self.session_id = None
+
+    def _ensure_daemon(self) -> None:
+        try:
+            _http_get(f"{self.daemon_url}/status")
+            return
+        except (urllib.error.URLError, OSError):
+            pass
+
+        logging.info("Bridge daemon not found — spawning superproductivity-mcp-bridge")
+        subprocess.Popen(
+            ["superproductivity-mcp-bridge"],
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+        deadline = time.monotonic() + _SPAWN_TIMEOUT
+        while time.monotonic() < deadline:
+            time.sleep(_SPAWN_POLL)
+            try:
+                _http_get(f"{self.daemon_url}/status")
+                logging.info("Bridge daemon ready")
+                return
+            except (urllib.error.URLError, OSError):
+                continue
+
+        raise RuntimeError(
+            f"Bridge daemon failed to start within {_SPAWN_TIMEOUT}s. "
+            "Try running 'superproductivity-mcp-bridge' manually."
+        )
 
     async def send_command(self, action: str, timeout: float = 30.0, **kwargs) -> Dict[str, Any]:
-        if self._loop is None:
-            raise RuntimeError("Bridge not started — call start() first")
-        cmd_id = f"{action}_{uuid.uuid4().hex}"
-        cmd = {"id": cmd_id, "action": action, **kwargs}
-        future: asyncio.Future = self._loop.create_future()
-        with self._lock:
-            self._pending[cmd_id] = future
-            self._queue.append(cmd)
+        if self.session_id is None:
+            raise RuntimeError("PluginBridgeClient not started — call start() first")
+        cmd = {"action": action, "_timeout": timeout, **kwargs}
+        url = f"{self.daemon_url}/session/{self.session_id}/command"
         try:
-            return await asyncio.wait_for(future, timeout=timeout)
-        except asyncio.TimeoutError:
-            with self._lock:
-                self._pending.pop(cmd_id, None)
-            return {"success": False, "error": f"Timeout waiting for response to {action}"}
-        except asyncio.CancelledError:
-            with self._lock:
-                self._pending.pop(cmd_id, None)
-            raise
+            # HTTP timeout = command timeout + 5s buffer for network overhead
+            return await asyncio.to_thread(_http_post, url, cmd, timeout + 5.0)
+        except Exception as e:
+            logging.warning("send_command %s failed: %s", action, e)
+            return {"success": False, "error": str(e)}
