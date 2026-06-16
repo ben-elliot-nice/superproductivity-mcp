@@ -472,7 +472,7 @@ class SuperProductivityMCPServer:
                 ),
                 types.Tool(
                     name="debug_directories",
-                    description="HTTP bridge status — port, queue depth, pending commands. Use if commands are timing out.",
+                    description="Daemon bridge status — URL, session ID, tag cache size. Use if commands are timing out.",
                     inputSchema={"type": "object", "properties": {}}
                 ),
             ]
@@ -962,8 +962,8 @@ class SuperProductivityMCPServer:
     async def debug_directories(self, args: Dict[str, Any]) -> Dict[str, Any]:
         return {
             "success": True,
-            "transport": "http",
-            "bridge_url": self._bridge.daemon_url,
+            "transport": "http-daemon",
+            "daemon_url": self._bridge.daemon_url,
             "session_id": self._bridge.session_id,
             "tag_cache_size": len(self._tag_cache),
         }
@@ -979,7 +979,7 @@ class SuperProductivityMCPServer:
                     write_stream,
                     InitializationOptions(
                         server_name="super-productivity",
-                        server_version="2.0.0",
+                        server_version="2.1.0",
                         capabilities=self.server.get_capabilities(
                             notification_options=NotificationOptions(),
                             experimental_capabilities={},
