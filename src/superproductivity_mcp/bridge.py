@@ -31,6 +31,7 @@ def _resolve_future(future: asyncio.Future, value: Any) -> None:
 
 class _BridgeHandler(BaseHTTPRequestHandler):
     def __init__(self, *args, bridge: "PluginBridge", **kwargs):
+        # Must be set before super().__init__() — BaseHTTPRequestHandler calls handle() during init
         self._bridge = bridge
         super().__init__(*args, **kwargs)
 
@@ -63,7 +64,9 @@ class _BridgeHandler(BaseHTTPRequestHandler):
                 self._bridge._queue.clear()
             self._send_json(200, cmds)
         elif self.path == "/config":
-            self._send_json(200, self._bridge._config)
+            with self._bridge._lock:
+                cfg = dict(self._bridge._config)
+            self._send_json(200, cfg)
         else:
             self._send_json(404, {"error": "not found"})
 
@@ -75,7 +78,8 @@ class _BridgeHandler(BaseHTTPRequestHandler):
             except (json.JSONDecodeError, ValueError):
                 self._send_json(400, {"error": "invalid json"})
                 return
-            future = self._bridge._pending.pop(cmd_id, None)
+            with self._bridge._lock:
+                future = self._bridge._pending.pop(cmd_id, None)
             if future is not None:
                 self._bridge._loop.call_soon_threadsafe(_resolve_future, future, body)
                 self._send_json(200, {"ok": True})
@@ -87,7 +91,8 @@ class _BridgeHandler(BaseHTTPRequestHandler):
             except (json.JSONDecodeError, ValueError):
                 self._send_json(400, {"error": "invalid json"})
                 return
-            self._bridge._config.update(data)
+            with self._bridge._lock:
+                self._bridge._config.update(data)
             self._send_json(200, {"ok": True})
         else:
             self._send_json(404, {"error": "not found"})
@@ -106,7 +111,7 @@ class PluginBridge:
 
     def __init__(self, port: Optional[int] = None):
         self._requested_port = port
-        self.port: int = port or PORT_RANGE_START  # placeholder until start()
+        self.port: Optional[int] = port  # set to actual bound port in start()
         self._lock = threading.Lock()
         self._queue: list = []
         self._pending: Dict[str, asyncio.Future] = {}
@@ -137,6 +142,8 @@ class PluginBridge:
     def stop(self) -> None:
         if self._server:
             self._server.shutdown()
+        if self._thread:
+            self._thread.join(timeout=2.0)
 
     async def send_command(self, action: str, timeout: float = 30.0, **kwargs) -> Dict[str, Any]:
         if self._loop is None:
@@ -150,8 +157,10 @@ class PluginBridge:
         try:
             return await asyncio.wait_for(future, timeout=timeout)
         except asyncio.TimeoutError:
-            self._pending.pop(cmd_id, None)
+            with self._lock:
+                self._pending.pop(cmd_id, None)
             return {"success": False, "error": f"Timeout waiting for response to {action}"}
         except asyncio.CancelledError:
-            self._pending.pop(cmd_id, None)
+            with self._lock:
+                self._pending.pop(cmd_id, None)
             raise
