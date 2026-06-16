@@ -124,3 +124,11 @@ def test_completed_includes_recent():
 def test_completed_excludes_null_done_on():
     task = {"id": "a", "isDone": True, "doneOn": None}
     assert filter_completed_since([task], since_days=7, now_ms=_NOW) == []
+
+
+def test_server_has_no_command_dir():
+    """After refactor, server should not create plugin_commands directory."""
+    from superproductivity_mcp.server import SuperProductivityMCPServer
+    server = SuperProductivityMCPServer.__new__(SuperProductivityMCPServer)
+    assert not hasattr(server, 'command_dir'), \
+        "command_dir was not removed — filesystem IPC still present"
