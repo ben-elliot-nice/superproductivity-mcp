@@ -9,7 +9,7 @@ import sys
 import time as _time
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional
 
 import mcp.server.stdio
 import mcp.types as types
@@ -960,13 +960,16 @@ class SuperProductivityMCPServer:
         )
 
     async def debug_directories(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        with self._bridge._lock:
+            pending = len(self._bridge._pending)
+            queued = len(self._bridge._queue)
         return {
             "success": True,
             "transport": "http",
             "bridge_port": self._bridge.port,
-            "bridge_url": f"http://localhost:{self._bridge.port}",
-            "pending_commands": len(self._bridge._pending),
-            "queued_commands": len(self._bridge._queue),
+            "bridge_url": f"http://localhost:{self._bridge.port}" if self._bridge.port else None,
+            "pending_commands": pending,
+            "queued_commands": queued,
             "tag_cache_size": len(self._tag_cache),
         }
 
@@ -975,19 +978,22 @@ class SuperProductivityMCPServer:
         loop = asyncio.get_running_loop()
         self._bridge.start(loop)
         logging.info("PluginBridge ready on port %d", self._bridge.port)
-        async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
-            await self.server.run(
-                read_stream,
-                write_stream,
-                InitializationOptions(
-                    server_name="super-productivity",
-                    server_version="2.0.0",
-                    capabilities=self.server.get_capabilities(
-                        notification_options=NotificationOptions(),
-                        experimental_capabilities={},
+        try:
+            async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
+                await self.server.run(
+                    read_stream,
+                    write_stream,
+                    InitializationOptions(
+                        server_name="super-productivity",
+                        server_version="2.0.0",
+                        capabilities=self.server.get_capabilities(
+                            notification_options=NotificationOptions(),
+                            experimental_capabilities={},
+                        ),
                     ),
-                ),
-            )
+                )
+        finally:
+            self._bridge.stop()
 
 
 async def _main():
