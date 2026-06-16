@@ -47,7 +47,6 @@ class PluginBridgeClient:
 
     def __init__(self, daemon_url: str = DAEMON_URL):
         self.daemon_url = daemon_url
-        self.port: int = 27833  # informational
         self.session_id: Optional[str] = None
 
     def start(self) -> None:

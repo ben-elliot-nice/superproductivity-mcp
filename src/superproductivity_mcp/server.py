@@ -963,8 +963,7 @@ class SuperProductivityMCPServer:
         return {
             "success": True,
             "transport": "http",
-            "bridge_port": self._bridge.port,
-            "bridge_url": f"http://localhost:{self._bridge.port}" if self._bridge.port else None,
+            "bridge_url": self._bridge.daemon_url,
             "session_id": self._bridge.session_id,
             "tag_cache_size": len(self._tag_cache),
         }

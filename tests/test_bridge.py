@@ -63,6 +63,7 @@ def test_client_send_command_round_trip():
         client.start()
 
         def simulate_plugin():
+            cmds = []
             deadline = time.monotonic() + 3.0
             while time.monotonic() < deadline:
                 cmds = json.loads(
