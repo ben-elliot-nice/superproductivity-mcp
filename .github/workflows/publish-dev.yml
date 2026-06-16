@@ -35,7 +35,7 @@ jobs:
           m = re.search(r'version = \"([^\"]+)\"', open('pyproject.toml').read())
           print(m.group(1))
           ")
-            VERSION="${CURRENT}.dev${{ github.run_number }}"
+            VERSION="${CURRENT}.dev$(date -u +%Y%m%d%H%M%S)"
             echo "source=keyword" >> "$GITHUB_OUTPUT"
           fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
