@@ -3,10 +3,11 @@ import logging
 import os
 import sys
 import threading
+import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional
 
 DAEMON_PORT = 27833
 _PID_DIR = Path(
@@ -68,8 +69,23 @@ class _DaemonHandler(BaseHTTPRequestHandler):
         if self.path == "/session/register":
             session_id = str(uuid.uuid4())
             with self._d._lock:
-                self._d._sessions.add(session_id)
+                self._d._sessions[session_id] = time.monotonic()
             self._send_json(200, {"session_id": session_id})
+
+        elif self.path.startswith("/session/") and self.path.endswith("/heartbeat"):
+            parts = self.path.split("/")
+            # /session/{id}/heartbeat → ['', 'session', id, 'heartbeat']
+            if len(parts) != 4:
+                self._send_json(400, {"error": "invalid path"})
+                return
+            session_id = parts[2]
+            self._read_body()
+            with self._d._lock:
+                if session_id not in self._d._sessions:
+                    self._send_json(404, {"error": "session not found"})
+                    return
+                self._d._sessions[session_id] = time.monotonic()
+            self._send_json(200, {"ok": True})
 
         elif self.path.startswith("/session/") and self.path.endswith("/command"):
             parts = self.path.split("/")
@@ -164,7 +180,7 @@ class _DaemonHandler(BaseHTTPRequestHandler):
         if self.path.startswith("/session/"):
             session_id = self.path[len("/session/"):]
             with self._d._lock:
-                self._d._sessions.discard(session_id)
+                self._d._sessions.pop(session_id, None)
             self._send_json(200, {"ok": True})
         else:
             self._send_json(404, {"error": "not found"})
@@ -181,10 +197,12 @@ class BridgeDaemon:
     side is unchanged from v2.0.0.
     """
 
-    def __init__(self, port: int = DAEMON_PORT):
+    def __init__(self, port: int = DAEMON_PORT, reaper_interval: float = 60.0, session_ttl: float = 90.0):
         self.port = port
+        self._reaper_interval = reaper_interval
+        self._session_ttl = session_ttl
         self._lock = threading.Lock()
-        self._sessions: Set[str] = set()
+        self._sessions: Dict[str, float] = {}  # session_id → last_seen timestamp
         self._plugin_queue: List[dict] = []
         self._routing: Dict[str, list] = {}  # cmd_id → [session_id, Event, response]
         self._config: Dict[str, Any] = {
@@ -193,6 +211,7 @@ class BridgeDaemon:
         }
         self._server: Optional[ThreadingHTTPServer] = None
         self._thread: Optional[threading.Thread] = None
+        self._stop_reaper: threading.Event = threading.Event()
 
     def start(self) -> None:
         def make_handler(*args, **kwargs):
@@ -202,10 +221,12 @@ class BridgeDaemon:
         # daemon=False so the thread keeps the process alive when run as standalone daemon
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=False)
         self._thread.start()
+        self._start_reaper()
         self._write_pid()
         logging.info("BridgeDaemon started on port %d (pid %d)", self.port, os.getpid())
 
     def stop(self) -> None:
+        self._stop_reaper.set()
         with self._lock:
             for entry in self._routing.values():
                 entry[1].set()  # wake all waiting handlers so they exit promptly
@@ -214,6 +235,26 @@ class BridgeDaemon:
         if self._thread:
             self._thread.join(timeout=5.0)
         self._remove_pid()
+
+    def _start_reaper(self) -> None:
+        def _reap() -> None:
+            while not self._stop_reaper.wait(timeout=self._reaper_interval):
+                now = time.monotonic()
+                with self._lock:
+                    stale = [sid for sid, ts in self._sessions.items()
+                             if now - ts > self._session_ttl]
+                    for sid in stale:
+                        del self._sessions[sid]
+                        evicted = {cid for cid, entry in self._routing.items()
+                                   if entry[0] == sid}
+                        for cid in evicted:
+                            entry = self._routing.pop(cid)
+                            entry[1].set()
+                        self._plugin_queue[:] = [
+                            c for c in self._plugin_queue
+                            if c.get("id") not in evicted
+                        ]
+        threading.Thread(target=_reap, daemon=True).start()
 
     def _write_pid(self) -> None:
         try:
