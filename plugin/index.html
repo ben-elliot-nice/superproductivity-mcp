@@ -42,6 +42,15 @@
         .status-connected    { background: #4CAF50; color: white; }
         .status-disconnected { background: #f44336; color: white; }
         .status-initializing { background: #FF9800; color: white; }
+        .status-connecting   { background: #FF9800; color: white; }
+        .status-reconnecting { background: #ff5722; color: white; }
+        .status-failed       { background: #f44336; color: white; }
+
+        .reconnect-btn-row {
+            display: none;
+            margin-top: 0.75rem;
+        }
+        .reconnect-btn-row.visible { display: block; }
 
         .container {
             max-width: 1200px;
@@ -52,10 +61,11 @@
         .grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            grid-template-rows: auto auto;
             gap: 1rem;
             margin-bottom: 1rem;
         }
+
+        .full-width { grid-column: 1 / -1; }
 
         .card {
             background: #2d2d2d;
@@ -63,14 +73,6 @@
             padding: 1rem;
             box-shadow: 0 2px 4px rgba(0,0,0,0.3);
         }
-
-        /* Settings spans both rows in right column */
-        .card-settings {
-            grid-column: 2;
-            grid-row: 1 / 3;
-        }
-
-        .full-width { grid-column: 1 / -1; }
 
         .card-header {
             display: flex;
@@ -97,12 +99,18 @@
         .stat-label { font-weight: 500; }
         .stat-value { color: #b0b0b0; }
 
-        /* Settings form — vertical layout */
+        /* Settings form */
+        .form-row {
+            display: flex;
+            gap: 1rem;
+            align-items: flex-end;
+        }
+
         .form-group {
             display: flex;
             flex-direction: column;
             gap: 0.25rem;
-            margin-bottom: 0.875rem;
+            flex: 1;
         }
 
         .form-group label {
@@ -126,24 +134,6 @@
 
         .form-group select { cursor: pointer; }
 
-        /* Read-only directory display */
-        .dir-value {
-            font-family: 'Courier New', monospace;
-            font-size: 0.8125rem;
-            color: #b0b0b0;
-            background: #1a1a1a;
-            border: 1px solid #404040;
-            border-radius: 4px;
-            padding: 0.4rem 0.6rem;
-            word-break: break-all;
-        }
-
-        .form-divider {
-            border: none;
-            border-top: 1px solid #404040;
-            margin: 1rem 0;
-        }
-
         .btn {
             padding: 0.5rem 1rem;
             border: none;
@@ -154,26 +144,11 @@
             transition: background-color 0.2s;
         }
 
-        .btn-primary   { background: #4fc3f7; color: #1a1a1a; }
-        .btn-primary:hover  { background: #29b6f6; }
-        .btn-secondary { background: #424242; color: #e0e0e0; }
-        .btn-secondary:hover { background: #616161; }
+        .btn-primary          { background: #4fc3f7; color: #1a1a1a; }
+        .btn-primary:hover    { background: #29b6f6; }
+        .btn-secondary        { background: #424242; color: #e0e0e0; }
+        .btn-secondary:hover  { background: #616161; }
         .btn-sm { padding: 0.25rem 0.75rem; font-size: 0.8125rem; }
-
-        .status-connecting  { background: #FF9800; color: white; }
-        .status-reconnecting { background: #ff5722; color: white; }
-        .status-failed      { background: #f44336; color: white; }
-
-        .reconnect-btn-row {
-          display: none;
-          margin-top: 0.75rem;
-        }
-        .reconnect-btn-row.visible { display: block; }
-
-        .btn-update {
-            width: 100%;
-            margin-top: 0.25rem;
-        }
 
         /* MCP Install card */
         .install-hint {
@@ -233,6 +208,7 @@
             font-family: 'Courier New', monospace;
             font-size: 0.8125rem;
             line-height: 1.5;
+            text-align: left;
         }
 
         .log-entry {
@@ -256,7 +232,7 @@
 
         @media (max-width: 768px) {
             .grid { grid-template-columns: 1fr; }
-            .card-settings { grid-column: 1; grid-row: auto; }
+            .form-row { flex-direction: column; }
         }
     </style>
 </head>
@@ -269,7 +245,7 @@
     <div class="container">
         <div class="grid">
 
-            <!-- Statistics Card (left col, row 1) -->
+            <!-- Statistics Card -->
             <div class="card">
                 <div class="card-header">
                     <h3>📊 Statistics</h3>
@@ -299,48 +275,7 @@
                 </div>
             </div>
 
-            <!-- Settings Card (right col, spans both rows) -->
-            <div class="card card-settings">
-                <div class="card-header">
-                    <h3>⚙️ Settings</h3>
-                </div>
-
-                <div class="form-group">
-                    <label for="pollingFrequency">Polling Frequency (seconds)</label>
-                    <input type="number" id="pollingFrequency" min="1" max="60" value="2" />
-                </div>
-
-                <div class="form-group">
-                    <label for="logLevelSelect">Log Level</label>
-                    <select id="logLevelSelect" onchange="updateLogLevel()">
-                        <option value="debug">DEBUG</option>
-                        <option value="info" selected>INFO</option>
-                        <option value="warn">WARN</option>
-                        <option value="error">ERROR</option>
-                    </select>
-                </div>
-
-                <hr class="form-divider">
-
-                <div class="form-group">
-                    <label>Data Directory</label>
-                    <div class="dir-value" id="mcpPath">—</div>
-                </div>
-
-                <div class="form-group">
-                    <label>Commands</label>
-                    <div class="dir-value" id="commandsDir">—</div>
-                </div>
-
-                <div class="form-group">
-                    <label>Responses</label>
-                    <div class="dir-value" id="responsesDir">—</div>
-                </div>
-
-                <button class="btn btn-primary btn-update" onclick="updatePollingFrequency()">Update Settings</button>
-            </div>
-
-            <!-- MCP Install Card (left col, row 2) -->
+            <!-- Claude Desktop Card -->
             <div class="card">
                 <div class="card-header">
                     <h3>🔌 Claude Desktop</h3>
@@ -364,17 +299,36 @@
                 </p>
             </div>
 
+            <!-- Log Settings (full width, directly above logs) -->
+            <div class="card full-width">
+                <div class="card-header">
+                    <h3>⚙️ Log Settings</h3>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="pollingFrequency">Polling Frequency (seconds)</label>
+                        <input type="number" id="pollingFrequency" min="1" max="60" value="2" />
+                    </div>
+                    <div class="form-group">
+                        <label for="logLevelSelect">Log Level</label>
+                        <select id="logLevelSelect" onchange="updateLogLevel()">
+                            <option value="debug">DEBUG</option>
+                            <option value="info" selected>INFO</option>
+                            <option value="warn">WARN</option>
+                            <option value="error">ERROR</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-primary" onclick="updatePollingFrequency()">Update Polling</button>
+                </div>
+            </div>
+
             <!-- Activity Logs (full width) -->
             <div class="card full-width">
                 <div class="card-header">
                     <h3>📝 Activity Logs</h3>
                     <button class="btn btn-secondary btn-sm" onclick="clearLogs()">Clear Logs</button>
                 </div>
-                <div class="logs-container" id="logsContainer">
-                    <div class="log-entry log-info">
-                        <span class="log-timestamp">[System]</span> MCP Bridge interface loaded
-                    </div>
-                </div>
+                <div class="logs-container" id="logsContainer"><div class="log-entry log-info" data-level="info"><span class="log-timestamp">[System]</span> MCP Bridge interface loaded</div></div>
             </div>
 
         </div>
@@ -384,9 +338,6 @@
         let bridgeStatus = {
             isInitialized: false,
             stats: { commandsProcessed: 0, errors: 0, startTime: Date.now() },
-            mcpPath: null,
-            commandsDir: null,
-            responsesDir: null,
             pollingFrequency: 2
         };
         let lastSyncedLogId = 0;
@@ -421,7 +372,7 @@
 
         function updateBridgeStatus(data) {
             if (data.status) {
-                bridgeStatus.isInitialized  = data.status.type === 'connected';
+                bridgeStatus.isInitialized   = data.status.type === 'connected';
                 bridgeStatus.connectionState = data.status.type;
                 bridgeStatus.statusMessage   = data.status.message;
             }
@@ -435,16 +386,12 @@
                     applyLogLevelFilter(data.config.logLevel);
                 }
             }
-            if (data.mcpPath)     bridgeStatus.mcpPath     = data.mcpPath;
-            if (data.commandDir)  bridgeStatus.commandsDir = data.commandDir;
-            if (data.responseDir) bridgeStatus.responsesDir = data.responseDir;
-
             updateUI();
         }
 
         function updateUI() {
-            const statusBadge = document.getElementById('statusBadge');
-            const statusText  = document.getElementById('statusText');
+            const statusBadge  = document.getElementById('statusBadge');
+            const statusText   = document.getElementById('statusText');
             const reconnectRow = document.getElementById('reconnectRow');
             const state = bridgeStatus.connectionState || (bridgeStatus.isInitialized ? 'connected' : 'connecting');
 
@@ -460,7 +407,6 @@
             statusText.textContent  = s.msg;
             reconnectRow.className  = `reconnect-btn-row${(state === 'reconnecting' || state === 'failed') ? ' visible' : ''}`;
 
-            // Stats (unchanged from original)
             document.getElementById('commandsProcessed').textContent = bridgeStatus.stats.commandsProcessed || 0;
             document.getElementById('errorCount').textContent         = bridgeStatus.stats.errors || 0;
             if (bridgeStatus.stats.lastCommandTime) {
@@ -469,10 +415,7 @@
             }
             const uptime = Math.floor((Date.now() - bridgeStatus.stats.startTime) / 1000);
             document.getElementById('uptime').textContent = formatUptime(uptime);
-            document.getElementById('mcpPath').textContent      = bridgeStatus.mcpPath     || '—';
-            document.getElementById('commandsDir').textContent  = bridgeStatus.commandsDir || '—';
-            document.getElementById('responsesDir').textContent = bridgeStatus.responsesDir || '—';
-            document.getElementById('pollingFrequency').value   = bridgeStatus.pollingFrequency;
+            document.getElementById('pollingFrequency').value = bridgeStatus.pollingFrequency;
         }
 
         function formatUptime(seconds) {
@@ -563,8 +506,6 @@
             if (window.parent && window.parent.mcpBridge) {
                 if (message.type === 'updatePollingFrequency') {
                     window.parent.mcpBridge.updatePollingFrequency(message.frequency);
-                } else if (message.type === 'forceCheck') {
-                    window.parent.mcpBridge.forceCommandCheck();
                 } else if (message.type === 'updateLogLevel') {
                     window.parent.mcpBridge.updateLogLevel(message.level);
                 } else if (message.type === 'manualReconnect') {
@@ -581,9 +522,9 @@
                 if (status) {
                     syncLogBuffer(status.logBuffer);
                     updateBridgeStatus({
-                        status:      { type: status.connectionState || (status.isInitialized ? 'connected' : 'connecting') },
-                        stats:       status.stats,
-                        config:      status.config,
+                        status: { type: status.connectionState || (status.isInitialized ? 'connected' : 'connecting') },
+                        stats:  status.stats,
+                        config: status.config,
                     });
                 }
             }
