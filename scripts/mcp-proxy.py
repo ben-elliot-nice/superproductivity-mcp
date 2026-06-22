@@ -109,12 +109,23 @@ def _handshake(child: subprocess.Popen, init_params: dict) -> None:
     child.stdin.flush()
 
 
-def _call_one(child: subprocess.Popen, raw: bytes) -> bytes:
-    """Forward raw JSON-RPC message to child and read one response synchronously.
+def _call_one(child: subprocess.Popen, raw: bytes, expected_id) -> bytes:
+    """Forward raw JSON-RPC message to child and read lines until one matches expected_id.
+    Intermediate notifications (no 'id') are forwarded to stdout immediately.
     Only safe before the pump thread is started."""
     child.stdin.write(raw)
     child.stdin.flush()
-    return child.stdout.readline()
+    while True:
+        line = child.stdout.readline()
+        try:
+            parsed = json.loads(line.decode())
+            if parsed.get("id") == expected_id:
+                return line
+        except (json.JSONDecodeError, AttributeError):
+            pass
+        # Not the response we're waiting for — forward immediately
+        sys.stdout.buffer.write(line)
+        sys.stdout.buffer.flush()
 
 
 # ── stdout pump ───────────────────────────────────────────────────────────────
@@ -206,7 +217,7 @@ def main() -> None:
                     mode = new_mode
                     child = _spawn(mode, env)
                     _handshake(child, init_params)
-                    resp = _call_one(child, raw)
+                    resp = _call_one(child, raw, mid)
                     start_pump()
                     sys.stdout.buffer.write(resp)
                     sys.stdout.buffer.flush()
