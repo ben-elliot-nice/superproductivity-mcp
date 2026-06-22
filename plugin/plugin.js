@@ -23,6 +23,12 @@ class MCPBridgePlugin {
       startTime: Date.now()
     };
 
+    this.connectionState = 'connecting';
+    this._backoffMs = 2000;
+    this._backoffStart = null;
+    this._retryTimeout = null;
+    this._consecutivePollErrors = 0;
+
     this.logSeq = 0;
     this.logBuffer = [];
   }
@@ -47,46 +53,119 @@ class MCPBridgePlugin {
     return res.json();
   }
 
-  // ── Lifecycle ─────────────────────────────────────────────────────────────
+  // ── Reconnect state machine ───────────────────────────────────────────────
 
-  async init() {
-    await this.log('MCP Bridge initializing…', 'info');
-    try {
-      await this.setupBridgeConnection();
-      await this.loadConfig();
-      this.startCommandProcessing();
-      this.registerHooks();
-      this.registerUI();
-      this.isInitialized = true;
-      await this.log('MCP Bridge ready', 'info');
-      this.updateUI({
-        status: { type: 'connected', message: '✅ Connected and ready' },
-        config: { pollingFrequency: Math.floor(this.config.commandCheckIntervalMs / 1000) }
-      });
-    } catch (error) {
-      await this.log(`Init failed: ${error.message}`, 'error');
-      this.updateUI({ status: { type: 'disconnected', message: `❌ ${error.message}` } });
+  _connectWithBackoff(isReconnect = false) {
+    this._backoffStart = this._backoffStart || Date.now();
+    if (!isReconnect) {
+      this._backoffStart = Date.now();
+      this._backoffMs = 2000;
     }
+    this._attemptConnect(isReconnect);
   }
 
-  async setupBridgeConnection() {
-    for (let port = BRIDGE_PORT_START; port < BRIDGE_PORT_END; port++) {
+  async _attemptConnect(isReconnect) {
+    this.connectionState = isReconnect ? 'reconnecting' : 'connecting';
+    const label = isReconnect ? '⚠️ Reconnecting' : 'Connecting';
+    this.updateUI({ status: { type: this.connectionState, message: `${label}…` } });
+
+    // Try last-known port first when reconnecting
+    const portsToTry = [];
+    if (isReconnect && this.bridgeUrl) {
+      try {
+        const lastPort = parseInt(new URL(this.bridgeUrl).port);
+        portsToTry.push(lastPort);
+      } catch (_) {}
+    }
+    for (let p = BRIDGE_PORT_START; p < BRIDGE_PORT_END; p++) {
+      if (!portsToTry.includes(p)) portsToTry.push(p);
+    }
+
+    for (const port of portsToTry) {
       try {
         const url = `http://localhost:${port}`;
         const res = await fetch(`${url}/status`);
         if (res.ok) {
           const data = await res.json();
           if (data.status === 'ok') {
-            this.bridgeUrl = url;
-            await this.log(`Bridge connected on port ${port}`, 'info');
+            await this._onConnected(url);
             return;
           }
         }
-      } catch (_) {
-        // port not open — try next
-      }
+      } catch (_) {}
     }
-    throw new Error(`No MCP Bridge found on ports ${BRIDGE_PORT_START}–${BRIDGE_PORT_END - 1}`);
+    this._scheduleRetry(isReconnect);
+  }
+
+  _scheduleRetry(isReconnect) {
+    const elapsed = Date.now() - (this._backoffStart || Date.now());
+    if (elapsed >= 5 * 60 * 1000) {
+      this.connectionState = 'failed';
+      this.updateUI({
+        status: { type: 'failed', message: '❌ Bridge not found — click Reconnect' }
+      });
+      return;
+    }
+    const delay = this._backoffMs;
+    this._backoffMs = Math.min(this._backoffMs * 2, 30000);
+    const label = isReconnect ? '⚠️ Reconnecting' : 'Connecting';
+    this.updateUI({
+      status: {
+        type: this.connectionState,
+        message: `${label}… retry in ${Math.round(delay / 1000)}s`
+      }
+    });
+    if (this._retryTimeout) clearTimeout(this._retryTimeout);
+    this._retryTimeout = setTimeout(() => this._attemptConnect(isReconnect), delay);
+  }
+
+  async _onConnected(url) {
+    this.bridgeUrl = url;
+    this.connectionState = 'connected';
+    this._backoffMs = 2000;
+    this._backoffStart = null;
+    this._consecutivePollErrors = 0;
+    if (this._retryTimeout) {
+      clearTimeout(this._retryTimeout);
+      this._retryTimeout = null;
+    }
+    await this.loadConfig();
+    this.startCommandProcessing();
+    this.isInitialized = true;
+    const port = new URL(url).port;
+    await this.log(`Bridge connected on port ${port}`, 'info');
+    this.updateUI({
+      status: { type: 'connected', message: '✅ Connected and ready' },
+      config: { pollingFrequency: Math.floor(this.config.commandCheckIntervalMs / 1000) }
+    });
+  }
+
+  _onConnectionLost() {
+    if (this.commandWatchInterval) {
+      clearInterval(this.commandWatchInterval);
+      this.commandWatchInterval = null;
+    }
+    this.isInitialized = false;
+    this._consecutivePollErrors = 0;
+    this.log('Connection lost — starting reconnect loop', 'warn');
+    this._connectWithBackoff(true);
+  }
+
+  manualReconnect() {
+    if (this._retryTimeout) clearTimeout(this._retryTimeout);
+    this._retryTimeout = null;
+    this._backoffMs = 2000;
+    this._backoffStart = null;
+    this._connectWithBackoff(true);
+  }
+
+  // ── Lifecycle ─────────────────────────────────────────────────────────────
+
+  async init() {
+    await this.log('MCP Bridge initializing…', 'info');
+    this.registerUI();
+    this.registerHooks();
+    this._connectWithBackoff(false);
   }
 
   async loadConfig() {
@@ -114,25 +193,32 @@ class MCPBridgePlugin {
 
   startCommandProcessing() {
     if (this.commandWatchInterval) clearInterval(this.commandWatchInterval);
-    this.commandWatchInterval = setInterval(async () => {
-      try {
-        await this.processNewCommands();
-      } catch (error) {
-        await this.log(`Poll error: ${error.message}`, 'error');
-        this.stats.errors++;
-      }
-    }, this.config.commandCheckIntervalMs);
+    this.commandWatchInterval = setInterval(
+      () => this.processNewCommands(),
+      this.config.commandCheckIntervalMs
+    );
   }
 
   async processNewCommands() {
-    const commands = await this._get('/commands');
-    if (!Array.isArray(commands) || commands.length === 0) return;
-    await this.log(`Processing ${commands.length} command(s)`, 'debug');
-    for (const command of commands) {
-      try {
-        await this.executeCommand(command);
-      } catch (error) {
-        await this.log(`Command ${command.action} failed: ${error.message}`, 'error');
+    try {
+      const commands = await this._get('/commands');
+      this._consecutivePollErrors = 0;
+      if (!Array.isArray(commands) || commands.length === 0) return;
+      await this.log(`Processing ${commands.length} command(s)`, 'debug');
+      for (const command of commands) {
+        try {
+          await this.executeCommand(command);
+        } catch (error) {
+          await this.log(`Command ${command.action} failed: ${error.message}`, 'error');
+        }
+      }
+    } catch (error) {
+      await this.log(`Poll error: ${error.message}`, 'error');
+      this.stats.errors++;
+      this._consecutivePollErrors++;
+      if (this._consecutivePollErrors >= 3) {
+        await this.log('3 consecutive poll failures — reconnecting', 'warn');
+        this._onConnectionLost();
       }
     }
   }
@@ -324,6 +410,7 @@ class MCPBridgePlugin {
   getStatus() {
     return {
       isInitialized: this.isInitialized,
+      connectionState: this.connectionState,
       bridgeUrl: this.bridgeUrl,
       stats: this.stats,
       logBuffer: this.logBuffer,

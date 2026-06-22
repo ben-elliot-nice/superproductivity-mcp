@@ -23,7 +23,7 @@ sed "s/__PLUGIN_VERSION__/${VERSION}/g" "$PLUGIN_DIR/index.html" > "$TEMP_HTML"
 trap "rm -f '$TEMP_HTML'" EXIT
 
 cd "$PLUGIN_DIR"
-zip -j "$OUT" "$TEMP_HTML" manifest.json plugin.js "$SCRIPT_DIR/README.md"
+zip -j "$OUT" "$TEMP_HTML" manifest.json plugin.js icon.svg "$SCRIPT_DIR/README.md"
 
 # zip uses the temp filename — rename the entry to index.html inside the zip
 python3 - <<PYEOF
