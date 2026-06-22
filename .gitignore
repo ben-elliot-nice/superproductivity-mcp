@@ -22,6 +22,9 @@ build/
 # Local MCP config (contains machine-specific absolute paths)
 .mcp.json
 
+# Local environment — never commit credentials
+.env
+
 # Claude Code local settings
 .claude/settings.local.json
 
@@ -37,3 +40,4 @@ plugin/*.zip
 
 # Git worktrees
 .worktrees/
+.superpowers/
