@@ -230,3 +230,73 @@ def test_response_unknown_id_returns_404():
             assert e.code == 404
     finally:
         d.stop()
+
+
+def test_heartbeat_updates_last_seen():
+    port = _free_port()
+    d = BridgeDaemon(port=port)
+    d.start()
+    try:
+        sid = _post(port, "/session/register", {})["session_id"]
+        with d._lock:
+            before = d._sessions[sid]
+        time.sleep(0.02)
+        r = _post(port, f"/session/{sid}/heartbeat", {})
+        assert r["ok"] is True
+        with d._lock:
+            after = d._sessions[sid]
+        assert after > before
+    finally:
+        d.stop()
+
+
+def test_heartbeat_unknown_session_returns_404():
+    port = _free_port()
+    d = BridgeDaemon(port=port)
+    d.start()
+    try:
+        import urllib.error
+        try:
+            _post(port, "/session/no-such-id/heartbeat", {})
+            assert False, "Expected 404"
+        except urllib.error.HTTPError as e:
+            assert e.code == 404
+    finally:
+        d.stop()
+
+
+def test_reaper_evicts_stale_session():
+    port = _free_port()
+    d = BridgeDaemon(port=port, reaper_interval=0.05, session_ttl=0.05)
+    d.start()
+    try:
+        _post(port, "/session/register", {})
+        assert _get(port, "/status")["active_sessions"] == 1
+        time.sleep(0.5)
+        assert _get(port, "/status")["active_sessions"] == 0
+    finally:
+        d.stop()
+
+
+def test_reaper_wakes_in_flight_command():
+    port = _free_port()
+    d = BridgeDaemon(port=port, reaper_interval=0.05, session_ttl=0.05)
+    d.start()
+    try:
+        sid = _post(port, "/session/register", {})["session_id"]
+        results: dict = {}
+
+        def submit():
+            results["resp"] = _post(
+                port, f"/session/{sid}/command",
+                {"action": "getTasks", "_timeout": 5.0},
+                timeout=6.0,
+            )
+
+        t = threading.Thread(target=submit)
+        t.start()
+        t.join(timeout=2.0)
+        assert not t.is_alive(), "Blocked thread should have been woken by reaper"
+        assert results["resp"]["success"] is False
+    finally:
+        d.stop()

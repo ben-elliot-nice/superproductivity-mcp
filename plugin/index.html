@@ -160,6 +160,16 @@
         .btn-secondary:hover { background: #616161; }
         .btn-sm { padding: 0.25rem 0.75rem; font-size: 0.8125rem; }
 
+        .status-connecting  { background: #FF9800; color: white; }
+        .status-reconnecting { background: #ff5722; color: white; }
+        .status-failed      { background: #f44336; color: white; }
+
+        .reconnect-btn-row {
+          display: none;
+          margin-top: 0.75rem;
+        }
+        .reconnect-btn-row.visible { display: block; }
+
         .btn-update {
             width: 100%;
             margin-top: 0.25rem;
@@ -283,6 +293,9 @@
                 <div class="stat">
                     <span class="stat-label">Uptime</span>
                     <span class="stat-value" id="uptime">0s</span>
+                </div>
+                <div class="reconnect-btn-row" id="reconnectRow">
+                    <button class="btn btn-primary" onclick="manualReconnect()">↺ Reconnect</button>
                 </div>
             </div>
 
@@ -408,7 +421,9 @@
 
         function updateBridgeStatus(data) {
             if (data.status) {
-                bridgeStatus.isInitialized = data.status.type === 'connected';
+                bridgeStatus.isInitialized  = data.status.type === 'connected';
+                bridgeStatus.connectionState = data.status.type;
+                bridgeStatus.statusMessage   = data.status.message;
             }
             if (data.stats) {
                 bridgeStatus.stats = { ...bridgeStatus.stats, ...data.stats };
@@ -426,28 +441,30 @@
         function updateUI() {
             const statusBadge = document.getElementById('statusBadge');
             const statusText  = document.getElementById('statusText');
+            const reconnectRow = document.getElementById('reconnectRow');
+            const state = bridgeStatus.connectionState || (bridgeStatus.isInitialized ? 'connected' : 'connecting');
 
-            if (bridgeStatus.isInitialized) {
-                statusBadge.textContent = 'Connected';
-                statusBadge.className   = 'status-badge status-connected';
-                statusText.textContent  = 'Connected to MCP';
-            } else {
-                statusBadge.textContent = 'Ready';
-                statusBadge.className   = 'status-badge status-initializing';
-                statusText.textContent  = 'Ready';
-            }
+            const stateMap = {
+                connected:    { text: 'Connected',    cls: 'status-connected',    msg: 'Connected to MCP' },
+                connecting:   { text: 'Connecting…',  cls: 'status-connecting',   msg: bridgeStatus.statusMessage || 'Connecting…' },
+                reconnecting: { text: 'Reconnecting', cls: 'status-reconnecting', msg: bridgeStatus.statusMessage || 'Reconnecting…' },
+                failed:       { text: 'Disconnected', cls: 'status-disconnected', msg: bridgeStatus.statusMessage || 'Bridge not found' },
+            };
+            const s = stateMap[state] || stateMap.connecting;
+            statusBadge.textContent = s.text;
+            statusBadge.className   = `status-badge ${s.cls}`;
+            statusText.textContent  = s.msg;
+            reconnectRow.className  = `reconnect-btn-row${(state === 'reconnecting' || state === 'failed') ? ' visible' : ''}`;
 
+            // Stats (unchanged from original)
             document.getElementById('commandsProcessed').textContent = bridgeStatus.stats.commandsProcessed || 0;
             document.getElementById('errorCount').textContent         = bridgeStatus.stats.errors || 0;
-
             if (bridgeStatus.stats.lastCommandTime) {
                 document.getElementById('lastCommand').textContent =
                     new Date(bridgeStatus.stats.lastCommandTime).toLocaleTimeString();
             }
-
             const uptime = Math.floor((Date.now() - bridgeStatus.stats.startTime) / 1000);
             document.getElementById('uptime').textContent = formatUptime(uptime);
-
             document.getElementById('mcpPath').textContent      = bridgeStatus.mcpPath     || '—';
             document.getElementById('commandsDir').textContent  = bridgeStatus.commandsDir || '—';
             document.getElementById('responsesDir').textContent = bridgeStatus.responsesDir || '—';
@@ -531,6 +548,13 @@
             }
         }
 
+        function manualReconnect() {
+            if (window.parent && window.parent.mcpBridge) {
+                window.parent.mcpBridge.manualReconnect();
+                addLogEntry('Manual reconnect triggered', 'info');
+            }
+        }
+
         function sendMessageToPlugin(message) {
             if (window.parent && window.parent.mcpBridge) {
                 if (message.type === 'updatePollingFrequency') {
@@ -539,6 +563,8 @@
                     window.parent.mcpBridge.forceCommandCheck();
                 } else if (message.type === 'updateLogLevel') {
                     window.parent.mcpBridge.updateLogLevel(message.level);
+                } else if (message.type === 'manualReconnect') {
+                    window.parent.mcpBridge.manualReconnect();
                 }
             } else {
                 addLogEntry('Could not communicate with plugin', 'warn');
@@ -551,12 +577,9 @@
                 if (status) {
                     syncLogBuffer(status.logBuffer);
                     updateBridgeStatus({
-                        status:      { type: status.isInitialized ? 'connected' : 'disconnected' },
-                        mcpPath:     status.mcpServerPath,
-                        commandDir:  status.commandDir,
-                        responseDir: status.responseDir,
+                        status:      { type: status.connectionState || (status.isInitialized ? 'connected' : 'connecting') },
                         stats:       status.stats,
-                        config:      status.config
+                        config:      status.config,
                     });
                 }
             }
