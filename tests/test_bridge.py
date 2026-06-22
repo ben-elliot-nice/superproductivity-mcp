@@ -135,3 +135,74 @@ def test_two_clients_one_daemon():
 
     asyncio.run(_run())
     d.stop()
+
+
+def test_send_command_reconnects_on_dead_session():
+    """Client auto-reconnects when daemon evicts the session (e.g. reaper)."""
+    port = _free_port()
+    d = BridgeDaemon(port=port)
+    d.start()
+
+    async def _run():
+        client = PluginBridgeClient(daemon_url=f"http://localhost:{port}", heartbeat_interval=999)
+        client.start()
+        old_session = client.session_id
+
+        # Evict session to simulate reaper
+        req = urllib.request.Request(
+            f"http://localhost:{port}/session/{old_session}", method="DELETE"
+        )
+        urllib.request.urlopen(req, timeout=5)
+
+        # Simulate plugin responding after reconnect
+        def simulate_plugin():
+            deadline = time.monotonic() + 5.0
+            while time.monotonic() < deadline:
+                try:
+                    cmds = json.loads(
+                        urllib.request.urlopen(
+                            f"http://localhost:{port}/commands", timeout=1
+                        ).read()
+                    )
+                    if cmds:
+                        cmd_id = cmds[0]["id"]
+                        data = json.dumps({"success": True, "result": []}).encode()
+                        post_req = urllib.request.Request(
+                            f"http://localhost:{port}/response/{cmd_id}",
+                            data=data,
+                            headers={"Content-Type": "application/json"},
+                            method="POST",
+                        )
+                        urllib.request.urlopen(post_req, timeout=5)
+                        return
+                except Exception:
+                    pass
+                time.sleep(0.05)
+
+        t = threading.Thread(target=simulate_plugin)
+        t.start()
+        result = await client.send_command("getTasks", timeout=3.0)
+        new_session = client.session_id
+        t.join(timeout=5)
+        client.stop()
+        return result, old_session, new_session
+
+    result, old_session, new_session = asyncio.run(_run())
+    d.stop()
+    assert result["success"] is True
+    assert new_session != old_session
+
+
+def test_heartbeat_keeps_session_alive():
+    """Heartbeat fires frequently enough to beat the reaper TTL."""
+    port = _free_port()
+    d = BridgeDaemon(port=port, reaper_interval=0.05, session_ttl=0.1)
+    d.start()
+    try:
+        client = PluginBridgeClient(daemon_url=f"http://localhost:{port}", heartbeat_interval=0.04)
+        client.start()
+        time.sleep(0.5)
+        assert _get(port, "/status")["active_sessions"] == 1
+        client.stop()
+    finally:
+        d.stop()
