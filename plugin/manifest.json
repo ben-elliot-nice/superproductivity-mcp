@@ -4,8 +4,8 @@
   "description": "Bridge between Super Productivity and MCP (Model Context Protocol) servers for Claude Desktop integration",
   "version": "2.1.0",
   "manifestVersion": 1,
-  "author": "Super Productivity Team",
-  "homepage": "https://github.com/johannesjo/super-productivity",
+  "author": "Ben Elliot",
+  "homepage": "https://github.com/ben-elliot-nice/superproductivity-mcp",
   "minSupVersion": "14.0.0",
   "permissions": [],
   "icon": "icon.svg",
@@ -20,7 +20,7 @@
     "integration"
   ],
   "iFrame": true,
-  "isSkipMenuEntry": true,
+  "isSkipMenuEntry": false,
   "hooks": [
     "taskUpdate",
     "taskComplete",

@@ -1,7 +1,8 @@
 [project]
 name = "superproductivity-mcp"
 version = "2.1.0"
-description = "Super Productivity MCP server for Claude Desktop integration"
+description = "Superproductivity MCP server for Claude Desktop integration"
+authors = [{name = "Ben Elliot", email = "ben.elliot@nice.com"}]
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

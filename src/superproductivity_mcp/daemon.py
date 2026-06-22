@@ -105,6 +105,11 @@ class _DaemonHandler(BaseHTTPRequestHandler):
 
             with self._d._lock:
                 self._d._routing.pop(cmd_id, None)
+                # Remove from queue if not yet consumed — prevents stale commands
+                # being executed by the plugin after the caller has already timed out.
+                self._d._plugin_queue[:] = [
+                    c for c in self._d._plugin_queue if c.get("id") != cmd_id
+                ]
 
             if responded and entry[2] is not None:
                 self._send_json(200, entry[2])
