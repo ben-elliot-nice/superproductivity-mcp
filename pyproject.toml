@@ -1,6 +1,6 @@
 [project]
 name = "superproductivity-mcp"
-version = "2.1.0"
+version = "2.2.0"
 description = "Superproductivity MCP server for Claude Desktop integration"
 authors = [{name = "Ben Elliot", email = "ben.elliot@nice.com"}]
 readme = "README.md"
