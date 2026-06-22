@@ -2,7 +2,7 @@
   "id": "sp-mcp-bridge",
   "name": "MCP Bridge",
   "description": "Bridge between Super Productivity and MCP (Model Context Protocol) servers for Claude Desktop integration",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "manifestVersion": 1,
   "author": "Ben Elliot",
   "homepage": "https://github.com/ben-elliot-nice/superproductivity-mcp",
@@ -28,6 +28,7 @@
     "currentTaskChange"
   ],
   "changelog": {
+    "2.2.1": "Fix duplicate sidebar entry — remove explicit registerMenuEntry, SP auto-registers iFrame plugins",
     "2.2.0": "Bridge hardening — plugin exponential backoff reconnect, MCP server auto-reconnect, daemon session TTL, dashboard visibility fix, dev hot-reload proxy",
     "2.1.0": "Singleton bridge daemon — multiple Claude sessions share one SP plugin connection via superproductivity-mcp-bridge",
     "2.0.0": "Rewrite plugin IPC from file-based (nodeExecution) to HTTP fetch — works as uploaded plugin, auto port selection 27833–27840",

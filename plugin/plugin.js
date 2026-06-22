@@ -383,11 +383,8 @@ class MCPBridgePlugin {
   }
 
   registerUI() {
-    PluginAPI.registerMenuEntry({
-      label: 'MCP Bridge Dashboard',
-      icon: 'dashboard',
-      onClick: () => PluginAPI.showIndexHtmlAsView(),
-    });
+    // SP auto-registers a sidebar entry for iFrame plugins via the manifest.
+    // No explicit registerMenuEntry needed — that would create a duplicate.
   }
 
   async sendEventToMCP(eventType, eventData) {
