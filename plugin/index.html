@@ -428,8 +428,12 @@
             if (data.stats) {
                 bridgeStatus.stats = { ...bridgeStatus.stats, ...data.stats };
             }
-            if (data.config && data.config.pollingFrequency) {
-                bridgeStatus.pollingFrequency = data.config.pollingFrequency;
+            if (data.config) {
+                if (data.config.pollingFrequency) bridgeStatus.pollingFrequency = data.config.pollingFrequency;
+                if (data.config.logLevel) {
+                    document.getElementById('logLevelSelect').value = data.config.logLevel;
+                    applyLogLevelFilter(data.config.logLevel);
+                }
             }
             if (data.mcpPath)     bridgeStatus.mcpPath     = data.mcpPath;
             if (data.commandDir)  bridgeStatus.commandsDir = data.commandDir;
